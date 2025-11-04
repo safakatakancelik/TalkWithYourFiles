@@ -1,6 +1,8 @@
 # Talk With Your Files (LLM(Langchain), GUI(Streamlit))
 
--- disclaimer: I've built this project when ChatGPT didn't have file uploading feature. It has a RAG implementation, and dynamically adjustable parameters. In its current form the project contains complexities that such an app wouldn't require, because those were going to be used for my future ideas. However, considering the current development of the products out there, I'm putting this idea on hold as it's probably won't be needed. In all cases, it was fun working on this idea! I will build some other things.
+read this first:
+-- disclaimer: I've built this project when ChatGPT didn't have file uploading feature. It has a RAG implementation, and dynamically adjustable parameters. In its current form the project contains complexities that such an app wouldn't require, because those were going to be used for my future ideas. However, considering the current development of the products out there, I'm putting this idea on hold as it's probably won't be needed. In all cases, it was fun working on this idea! I will build some other things. It is most likely that operating systems and cloud drive services will include the idea I was building here natively. Let's see how the future will unfold.
+
 
 ## Description
 Talk-With-Your-Files is an open source GUI (Graphical User Interface) application powered by LLMs (Large Language Models). Simply load your documents (PDF, docs, etc.) and then ask your questions about it. Choose to use dynamic processing parameters or default settings. + you can ask your questions standalone or integrate it with a chatbot.
