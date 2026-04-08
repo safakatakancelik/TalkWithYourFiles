@@ -1,7 +1,7 @@
 # Talk With Your Files (LLM(Langchain), GUI(Streamlit))
 
 read this first:
--- disclaimer: I've built this project when ChatGPT didn't have file uploading feature. It has a RAG implementation, and dynamically adjustable parameters. In its current form the project contains complexities that such an app wouldn't require, because those were going to be used for my future ideas. However, considering the current development of the products out there, I'm putting this idea on hold as it's probably won't be needed. In all cases, it was fun working on this idea! I will build some other things. It is most likely that operating systems and cloud drive services will include the idea I was building here natively. Let's see how the future will unfold.
+-- disclaimer: This is discontinued. I've built this project when ChatGPT didn't have file uploading feature. It has a RAG implementation, and dynamically adjustable parameters. In its current form the project contains complexities that such an app wouldn't require, because those were going to be used for my future ideas. However, considering the current development of the products out there, I'm putting this idea on hold as it's probably won't be needed. In all cases, it was fun working on this idea! I will build some other things. It is most likely that operating systems and cloud drive services will include the idea I was building here natively. Let's see how the future will unfold.
 
 
 ## Description
