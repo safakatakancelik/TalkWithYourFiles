@@ -1,100 +1,49 @@
-from abc import ABC, abstractmethod
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from typing import List, Optional
+
+from langchain_core.embeddings import Embeddings
+from langchain_core.vectorstores import InMemoryVectorStore
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from rank_bm25 import BM25Plus
 
 
 """
-In this file Strategy Design Pattern is used to make this functionalities more flexible & maintainable.
-Currently there's only one text processor subclass which is called DefaultTextProcessor.
+Text processing: split the text into chunks, build a searchable index, retrieve the chunks most related to a question.
 
-If you met the need to extend this further by adding a new text processor subclass:
-1) Create a new subclass of TextProcessor in this module.
-2) Implement the split_text method: Define the logic to split the text into chunks according to the desired strategy.
-3) Implement the create_embeddings method: Define how to create embeddings or other representations from the text chunks.
-4) Optionally, implement any additional methods specific to your text processing strategy. 
+Two kinds of index are supported:
+- SemanticIndex: embeddings + an in-memory vector store (needs an OpenRouter key).
+- KeywordIndex: BM25 keyword ranking, used when no embeddings provider is available (e.g. only an Anthropic key).
 
-Feel free to refer to the existing DefaultTextProcessor implementation for guidance on how to structure your new text processor subclass.
-
+Both expose the same search(question, k) method, so the rest of the app doesn't care which one is used.
 """
 
 
-class TextProcessor(ABC):
-    """Abstract base class for text processors."""
-
-    @abstractmethod
-    def split_text(self, text):
-        """Split the text into chunks.
-
-        Parameters:
-        text (str): The text to split.
-
-        Returns:
-        list: The text chunks.
-
-        """
-        pass
-
-    @abstractmethod
-    def create_embeddings(self, chunks):
-        """Create embeddings from the text chunks.
-
-        Parameters:
-        chunks (list): The text chunks.
-
-        Returns:
-        list: The embeddings.
-
-        """
-        pass
+def split_text(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    return splitter.split_text(text)
 
 
-class DefaultTextProcessor(TextProcessor):
-    """Default text processor."""
+class SemanticIndex:
+    def __init__(self, chunks: List[str], embeddings: Embeddings):
+        self.store = InMemoryVectorStore.from_texts(chunks, embeddings)
 
-    def __init__(self, param_controller):
-        self.param_controller = param_controller
+    def search(self, question: str, k: int) -> List[str]:
+        return [doc.page_content for doc in self.store.similarity_search(question, k=k)]
 
-    def split_text(self, text):
-        """Split the text into chunks.
 
-        Parameters:
-        text (str): The text to split.
+class KeywordIndex:
+    def __init__(self, chunks: List[str]):
+        self.chunks = chunks
+        self.bm25 = BM25Plus([_tokenize(chunk) for chunk in chunks])
 
-        Returns:
-        list: The text chunks.
-        """
+    def search(self, question: str, k: int) -> List[str]:
+        return self.bm25.get_top_n(_tokenize(question), self.chunks, n=k)
 
-        #### PRE- SET UP CHUNK CONFIGS
-        chunk_size = self.param_controller.get_parameter('chunk_size')['value']
-        chunk_overlap = self.param_controller.get_parameter('chunk_overlap')['value']
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, 
-            chunk_overlap=chunk_overlap, 
-            separators=[" ", ",", "\n"],
-            length_function=len
-        )
+def build_index(chunks: List[str], embeddings: Optional[Embeddings]):
+    if embeddings is None:
+        return KeywordIndex(chunks)
+    return SemanticIndex(chunks, embeddings)
 
-        chunks = text_splitter.split_text(text)
-        return chunks
 
-    def create_embeddings(self, chunks):
-        """Create embeddings from the text chunks.
-
-        Parameters:
-        chunks (list): The text chunks.
-
-        Returns:
-        list: The embeddings.
-
-        """
-        #### can this function be called without any chunks?
-        if not chunks:
-            return None
-        embeddings = OpenAIEmbeddings()
-        try:
-            return FAISS.from_texts(chunks, embeddings)
-        except Exception as e:
-            print(f"Error creating embeddings: {e}")
-            return None
+def _tokenize(text: str) -> List[str]:
+    return [word for word in "".join(c.lower() if c.isalnum() else " " for c in text).split()]

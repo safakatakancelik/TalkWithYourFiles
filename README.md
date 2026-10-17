@@ -1,70 +1,60 @@
 # Talk With Your Files (LLM(Langchain), GUI(Streamlit))
 
-read this first:
--- disclaimer: This is discontinued. I've built this project when ChatGPT didn't have file uploading feature. It has a RAG implementation, and dynamically adjustable parameters. In its current form the project contains complexities that such an app wouldn't require, because those were going to be used for my future ideas. However, considering the current development of the products out there, I'm putting this idea on hold as it's probably won't be needed. In all cases, it was fun working on this idea! I will build some other things. It is most likely that operating systems and cloud drive services will include the idea I was building here natively. Let's see how the future will unfold.
-
+I built this app before OpenAI shipped file uploads with GPT-4: upload your files and ask questions about them.
+This version is a tribute to that original, using the exact same layout. It works and solves real problems, and I'm thinking about how to take it to the next step.
+(The original 2023 version: [`v1.0.0`](https://github.com/safakatakancelik/TalkWithYourFiles/releases/tag/v1.0.0).)
 
 ## Description
-Talk-With-Your-Files is an open source GUI (Graphical User Interface) application powered by LLMs (Large Language Models). Simply load your documents (PDF, docs, etc.) and then ask your questions about it. Choose to use dynamic processing parameters or default settings. + you can ask your questions standalone or integrate it with a chatbot.
+Talk-With-Your-Files is an open source GUI (Graphical User Interface) application powered by LLMs (Large Language Models). Simply load your documents (PDF, DOCX, TXT, CSV) and then ask your questions about them. Choose to use dynamic processing parameters or default settings. + you can ask your questions standalone or integrate them into a chatbot conversation.
 
-
+![QA Chain screenshot](images/screenshot_qa_chain.png)
+![Chatbot screenshot](images/screenshot_chatbot.png)
 
 ### Functionalities
 ![User Journey](images/user_journey.png)
 - Question your files (PDF, DOCX, CSV, TXT) and choose to integrate results into the chatbot.
 - Conversation with an LLM.
-- Tweak the qa chain behaviour with dynamic parameters & monitor within GUI.
-- Monitor conversation history (Summary Memory)
-
-It is not dependent on any specific framework, as long as the underlying logics are provided it will work as it is.
+- Tweak the QA chain behaviour with dynamic parameters & see what the context window was spent on.
+- Monitor the active parameters.
 
 Current frameworks in use:
 - Langchain - Handle LLM integration & processing texts.
 - Streamlit - Prepare the GUI
 
-### Limitations
-- Currently uses OpenAI API only, but the next update will introduce integration open source models such as LLama2, mpt-7b, ...
-- While the QA Chain has dynamic parameters, the parameters of the chat functionality are static and will also be sorted in the next update.
-  
+### Models
+- **Anthropic** (Claude) or **OpenRouter** (GPT, Gemini, Llama, Claude and many more). Pick one in the sidebar and type any model name.
+- With an OpenRouter key, related chunks are found with embeddings. With only an Anthropic key, keyword search (BM25) is used, since Anthropic has no embeddings API.
+
 ## Installation
 
-1. Clone the repository: `git clone https://github.com/Safakan/TalkWithYourFiles.git` or by using the GitHub Desktop app.
-2. Install the required dependencies: `pip install -r requirements.txt` (ideally in a virtual environment)
+1. Clone the repository: `git clone https://github.com/safakatakancelik/TalkWithYourFiles.git`
+2. Install the required dependencies: `pip install -r requirements.txt` (Python 3.10+, ideally in a virtual environment)
+3. Optional: copy `.env.example` to `.env` and add your API key(s).
 
 OR
-1. Create a docker container using the Dockerfile.
-   
+1. Build & run with Docker: `docker build -t talkwithyourfiles .` then `docker run -p 8501:8501 --env-file .env talkwithyourfiles`
+
 ## Usage
 1. Open the TalkWithYourFiles subdirectory: `cd TalkWithYourFiles`
 2. Run the application: `streamlit run streamlit_interface.py`
 3. Wait for the application to run on your browser.
-4. Authenticate yourself on the sidebar with your api key.
+4. Add your API key on the sidebar (or use a `.env` file). Keys typed in the sidebar are not stored.
 5. Start getting answers to your questions!
-
-
-OR
-1. Test/use the app in the demo production environment.
 
 ## Process Diagrams
 ![QA Chain](images/qa_chain.png)
 ![Codebase Overview](images/codebase_overview.png)
 
 ## Tips
-1. Check individual modules for further documentation. 
-2. LLM model to be used can be changed on the GUI or by setting different parameters in parameter_controller.
-3. New files to be supported can be integrated into the app by modifying the file_handlers.py
-4. To use another GUI framework, create your application based on your needs, and import the functions you need. (e.g. run function from the flow_coordinator.py for the QA chain)
-5. Flow Coordinator doesn't own any of the actual implementation and dependent on lower level modules. Make sure to modify & support the app based on your usage requirements. 
+1. Check individual modules for further documentation.
+2. The model can be changed on the GUI, or with `ANTHROPIC_MODEL` / `OPENROUTER_MODEL` in `.env`.
+3. New providers can be added in `backend_utils/providers.py`.
+4. New file types can be supported by adding a handler to `backend_utils/file_handlers.py`.
+5. To use another GUI framework, import `FlowCoordinator` from `flow_coordinator.py` and call `run(files, question)`. It doesn't depend on Streamlit.
 
 ## Contributing
 Contributions are welcome! If you find any issues or have suggestions for improvements, please create a new issue or submit a pull request.
-Some points to improve/add in in the future:
-1. Integrating Open Source LLMs.
-2. Allowing other type of file extensions.
-3. Allowing multimodality by processing non-text inputs into text data.
-4. Database integration
+Run the tests with `pip install -r requirements-dev.txt && pytest`.
 
 ## License
 This project is licensed under the [MIT License](LICENSE).
-
-

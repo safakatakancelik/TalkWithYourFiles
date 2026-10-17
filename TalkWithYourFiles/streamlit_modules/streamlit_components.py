@@ -1,143 +1,154 @@
 import streamlit as st
-from .streamlit_helper_functions import advanced_parameters_section, create_authorization_box, get_chat_bot_info_dict, get_qa_chain_info_dict
-from .streamlit_chat import integrate_chain_into_chat
 
+from backend_utils import providers
+from backend_utils.file_handlers import FileHandlerFactory
+from flow_coordinator import FlowError
+from .streamlit_chat import integrate_chain_into_chat
+from .streamlit_helper_functions import (
+    CHAT_BOT_PARAMS,
+    QA_CHAIN_PARAMS,
+    advanced_parameters_section,
+    api_key_input,
+    get_params_info_dict,
+    retrieval_label,
+)
+
+
+REPO_URL = "https://github.com/safakatakancelik/TalkWithYourFiles"
 
 
 def setup_page_configurations():
     ##### PAGE CONFIGURATIONS
     st.set_page_config(
-                    page_title="Talk With Your Files",
-                    page_icon="🧙‍♂️",
-                    layout="wide", # centered or wide
-                    initial_sidebar_state="expanded", #auto, expanded, collapsed
-                    menu_items={
-                        'Get Help': 'https://github.com/Safakan',
-                        'Report a bug': "https://github.com/Safakan/TalkWithYourFiles",
-                        'About': "Open source LLM GUI app allowing interactions with files!"
-                        }
-                    )
-
-    # ---- HIDE STREAMLIT STYLE ----
-    hide_streamlit_style = """
-                <style>
-                #MainMenu {visibility: hidden;}
-                footer {visibility: hidden;}
-                </style>
-                """
-    st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
+        page_title="Talk With Your Files",
+        page_icon="🧙‍♂️",
+        layout="wide",
+        initial_sidebar_state="expanded",
+        menu_items={
+            'Get Help': REPO_URL,
+            'Report a bug': f"{REPO_URL}/issues",
+            'About': "Open source LLM GUI app allowing interactions with files!"
+        }
+    )
 
 
 def setup_header_area():
     ##### HEADER
     st.title("Talk With Your Files 🪄 ")
 
-def setup_sidebar(flow_coordinator):
+
+def setup_sidebar(param_controller):
+    """Draws the sidebar and returns the usable API keys (provider id -> key)."""
     ##### SIDEBAR
     st.sidebar.markdown("# Talk With Your Files 🪄")
-    st.sidebar.write("Hello! Here's an open-source tool for you. Query your files, modify the QA chain behaviour, monitor active parameters, feed the results into the chatbot if you prefer and debug the chatbot conversation. Stay tuned for the updates. Hope you love it! ❤️")
-
-    st.sidebar.markdown('Documentation & codebase: [github.com/Safakan/TalkWithYourFiles](https://www.github.com/Safakan/TalkWithYourFiles)')
-    st.sidebar.write("Please visit to understand the app in depth.")
-
+    st.sidebar.write("Hello! Here's an open-source tool for you. Query your files, modify the QA chain behaviour, "
+                     "monitor active parameters, feed the results into the chatbot if you prefer. Hope you love it! ❤️")
+    st.sidebar.markdown(f'Documentation & codebase: [github.com/safakatakancelik/TalkWithYourFiles]({REPO_URL})')
 
     st.sidebar.markdown("### Authorization")
-    ##### Authorization box for OpenAI API KEY
-    create_authorization_box(flow_coordinator)
-    st.sidebar.write("API keys are not stored, and their use is limited to your present browser session.")
-    
+    st.sidebar.write("Add a key for at least one provider. Keys in a `.env` file are picked up automatically.")
+    api_keys = {}
+    for provider_id in providers.PROVIDERS:
+        key = api_key_input(provider_id)
+        if key:
+            api_keys[provider_id] = key
+    st.sidebar.caption("API keys typed here are not stored, and their use is limited to your present browser session.")
 
-    st.sidebar.markdown(
-        """
-        Stay tuned for the open-source models! While using OpenAI models, there'll be minimal costs based on your usage.
-        -[ see pricing here](https://openai.com/pricing)
-        """,
-        unsafe_allow_html=True,
-    )
+    st.sidebar.markdown("### Model")
+    if api_keys:
+        provider_id = st.sidebar.selectbox(
+            "Provider",
+            options=list(api_keys),
+            format_func=lambda p: providers.PROVIDERS[p].label,
+            key="param_provider",
+        )
+        model_name = st.sidebar.text_input(
+            "Model",
+            value=providers.default_model(provider_id),
+            key=f"model_{provider_id}",
+            help="Any model name the provider supports.",
+        ).strip() or providers.default_model(provider_id)
+        param_controller.set_parameter('provider', provider_id)
+        param_controller.set_parameter('model_name', model_name)
+    else:
+        st.sidebar.info("Add an API key above to choose a model.")
 
-def tab1_qa_chain_files(param_controller, flow_coordinator):
+    retrieval = providers.pick_retrieval_provider(api_keys)
+    param_controller.set_parameter('retrieval', retrieval)
+    if api_keys:
+        st.sidebar.caption(f"Finding related chunks with: {retrieval_label(retrieval)}")
+
+    st.sidebar.markdown("Using these APIs costs a small amount based on your usage, billed by the provider.")
+    return api_keys
+
+
+def tab1_qa_chain_files(param_controller, flow_coordinator, has_llm):
     """
-    Main function to run the Streamlit interface and execute the run function from flow coordinator.
-    This file follows the dependency inversion principle, and separates UI from backend functionalities:
-    Streamlit framework is used to render the GUI and manage file uploads.
-    To use other approaches or frameworks: 
-    1) Make sure to set up a GUI that allows users to upload files & enter text input for their questions.
-    2) Import the run method from the flow_coordinator.py
-    3) Get the response by running the run(files, user_question) method with the appropriate arguments. 
-    
+    The QA chain over files. Streamlit only renders the GUI & handles uploads;
+    the work is done by flow_coordinator.run(files, user_question), which any other GUI could call too.
     """
- 
-
-
     ##### FILE UPLOADS
-    files = st.file_uploader("Upload files", 
-                            type=["pdf", "docx", "txt","csv"], 
-                            accept_multiple_files=True
-                            )
-
-
-
-    
+    files = st.file_uploader(
+        "Upload files",
+        type=FileHandlerFactory.supported_extensions(),
+        accept_multiple_files=True,
+    )
 
     ##### ADVANCED PARAMETERS SECTION
     with st.expander("Show Advanced Parameters?"):
         advanced_parameters_section(param_controller)
 
-
-
-
     ##### USER QUESTION INPUT
     user_question = st.text_input("Please ask question(s) about the files you've uploaded: ")
-    
 
     ###### To run the chain & shape the behaviour
-    run_button_col, integration_button_col = st.columns([4,1])
+    run_button_col, integration_button_col = st.columns([3, 1])
     with run_button_col:
-        ##### QA CHAIN RUN BUTTON
-        run_button_clicked = st.button("Run",
-                                    use_container_width=True,
-                                    type="primary"                                   
-                                    )
-    
+        run_button_clicked = st.button("Run", width="stretch", type="primary", disabled=not has_llm)
     with integration_button_col:
-        ###### QA Chain Behaviour
         transfer_to_chat_bot = st.selectbox(
-                                            label="Test",
-                                            label_visibility="collapsed", 
-                                            options=["Standalone","Integrated into the chatbot"]
-                                            )
+            label="QA chain behaviour",
+            label_visibility="collapsed",
+            options=["Standalone", "Integrated into the chatbot"],
+        )
 
+    if not has_llm:
+        st.info("Add an API key on the sidebar to start.")
 
     ##### START QA CHAIN
-    if user_question and files and run_button_clicked and st.session_state.api_key_valid:       
-        response = flow_coordinator.run(files, user_question)
-        st.write(response)
-
+    if run_button_clicked:
+        try:
+            with st.spinner("Reading your files & asking the model..."):
+                result = flow_coordinator.run([(f.name, f.getvalue()) for f in files or []], user_question)
+        except FlowError as e:
+            st.error(str(e))
+            return
+        st.session_state.last_qa_result = result
+        st.session_state.last_qa_question = user_question
         if transfer_to_chat_bot != "Standalone":
-            integrate_chain_into_chat(user_question, response)
+            integrate_chain_into_chat(user_question, result.answer)
+            st.toast("Added to the chat in the Chat Bot tab.")
+        st.rerun()  # redraw so the token usage in the advanced section is up to date
+
+    result = st.session_state.last_qa_result
+    if result is not None:
+        st.markdown(f"**{st.session_state.last_qa_question}**")
+        st.write(result.answer)
+        if result.usage.reported:
+            st.caption(f"{result.usage.total} tokens used · details under Show Advanced Parameters")
+        with st.expander(f"Retrieved chunks ({len(result.chunks)})"):
+            for i, chunk in enumerate(result.chunks, 1):
+                st.markdown(f"**Chunk {i}**")
+                st.text(chunk)
 
 
 def tab2_active_params(param_controller):
-    ## for testing purposes - to see the params in the UI as we change them.
+    ## To see the params in the UI as we change them.
+    column_chat_bot_params, column_qa_chain_params = st.columns(2)
 
-    # tab_chat_bot_params, tab_qa_chain_params = st.tabs(["Chat Bot", "QA Chain"])
-    tab_chat_bot_params, tab_qa_chain_params = st.columns(2)
-
-    with tab_chat_bot_params:
-        st.write("""
-                Chat Bot   
-                """
-                )
-        st.write(get_chat_bot_info_dict(param_controller))
-    with tab_qa_chain_params:
-        st.write("""
-                QA Chain
-                """
-                )
-        st.write(get_qa_chain_info_dict(param_controller))
-
-
-
-
-
-
+    with column_chat_bot_params:
+        st.write("Chat Bot")
+        st.write(get_params_info_dict(param_controller, CHAT_BOT_PARAMS))
+    with column_qa_chain_params:
+        st.write("QA Chain")
+        st.write(get_params_info_dict(param_controller, QA_CHAIN_PARAMS))
