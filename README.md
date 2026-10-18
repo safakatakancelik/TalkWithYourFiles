@@ -7,7 +7,10 @@ This version is a tribute to that original, using the exact same layout. It work
 ## Description
 Talk-With-Your-Files is an open source GUI (Graphical User Interface) application powered by LLMs (Large Language Models). Simply load your documents (PDF, DOCX, TXT, CSV) and then ask your questions about them. Choose to use dynamic processing parameters or default settings. + you can ask your questions standalone or integrate them into a chatbot conversation.
 
+Question answering chain:
 ![QA Chain screenshot](images/screenshot_qa_chain.png)
+
+Chatbot integration:
 ![Chatbot screenshot](images/screenshot_chatbot.png)
 
 ### Functionalities
