@@ -163,3 +163,5 @@ cython_debug/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+# Local Claude Code / editor config
+.claude/

@@ -1,5 +1,3 @@
 [server]
-enableStaticServing = true
-
-# Default: 200
-maxUploadSize = 5
+# Max upload size per file, in MB. Default: 200
+maxUploadSize = 20
