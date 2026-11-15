@@ -1,7 +1,7 @@
 import { DEMO_QUESTION, DEMO_WORKSPACE, demoScript, demoWorkspace } from '../demo/scenario';
 import type { ScriptStep } from '../demo/scenario';
 import { ORCHESTRATOR } from './types';
-import type { Agent, Backend, ChatMsg, Citation, ContextMap, FileItem, FileType, Session } from './types';
+import type { Agent, Backend, ChatMsg, Citation, ContextMap, FileItem, FileType, Note, Session } from './types';
 
 // An in-memory backend. Nothing is saved and nothing leaves the browser.
 
@@ -34,12 +34,15 @@ export const clock = {
 interface WsData {
   files: FileItem[];
   agents: Agent[];
+  notes: Note[];
   sessions: Session[];
   map: ContextMap;
   messages: Record<string, ChatMsg[]>;
 }
 
-const empty = (): WsData => ({ files: [], agents: [], sessions: [], map: { nodes: [], links: [] }, messages: {} });
+// Every workspace starts with a small pool of generic translators.
+const pool = (): Agent[] => [1, 2].map((n) => ({ id: `a-t${n}`, name: `Translator ${n}`, specialty: 'generic' }));
+const empty = (): WsData => ({ files: [], agents: pool(), notes: [], sessions: [], map: { nodes: [], links: [] }, messages: {} });
 const data: Record<string, WsData> = { mine: empty(), demo: structuredClone(demoWorkspace) };
 
 export function resetDemo() {
@@ -53,36 +56,40 @@ const copy = <T,>(value: T): Promise<T> => Promise.resolve(structuredClone(value
 const TYPES: FileType[] = ['pdf', 'docx', 'csv', 'md', 'txt'];
 const typeOf = (name: string): FileType => TYPES.find((t) => name.toLowerCase().endsWith(`.${t}`)) ?? 'other';
 
-const placeholderCitation = (n: number, agent: Agent): Citation => ({
-  n,
-  fileId: agent.fileIds[0],
-  agentId: agent.id,
-  location: 'Placeholder location',
-  passage: 'Placeholder passage. Real passages will come from the file once a backend is connected.',
-  quote: 'Placeholder passage.',
-});
-
 /** A simulated huddle for any question that is not the demo question. */
 function genericScript(ws: WsData, question: string): ScriptStep[] {
-  if (!ws.agents.length) {
+  if (!ws.files.length) {
     return [{ delay: 600, event: { type: 'answer', citations: [], placeholder: true,
       text: 'There are no files in this workspace yet. Upload some in the explorer (E), or run the demo.' } }];
   }
   const q = question.toLowerCase();
-  const called = ws.agents.filter((a) => q.includes(a.name.toLowerCase().replace(/\.[a-z0-9]+$/, '')));
-  const joined = called.length ? called : ws.agents.slice(0, 2);
-  const cites = joined.map((a, i) => placeholderCitation(i + 1, a));
+  const named = ws.files.filter((f) => q.includes(f.name.toLowerCase().replace(/\.[a-z0-9]+$/, '')));
+  // The orchestrator pairs files with translators from the pool. Nothing ties a translator to a file.
+  const work = (named.length ? named : ws.files.slice(0, 2)).map((f, i) => ({ f, a: ws.agents[i % ws.agents.length] }));
+  const joined = [...new Set(work.map((w) => w.a))];
+  const cites = work.map(({ f, a }, i): Citation => ({
+    n: i + 1, fileId: f.id, agentId: a.id, location: 'Placeholder location',
+    passage: 'Placeholder passage. Real passages will come from the file once a backend is connected.',
+    quote: 'Placeholder passage.',
+  }));
   return [
     { delay: 800, event: { type: 'broadcast', to: ws.agents.map((a) => a.id), text: `Who can help with: "${question}"?` } },
-    ...joined.map((a): ScriptStep => ({ delay: 900, event: { type: 'join', agentId: a.id, how: called.length ? 'called' : 'volunteered' } })),
-    ...joined.flatMap((a, i): ScriptStep[] => [
-      { delay: 900, event: { type: 'reading', agentId: a.id } },
-      { delay: 1200, event: { type: 'say', agentId: a.id, citations: [cites[i]], text: `Placeholder: I would search ${a.name} for passages that answer this.` } },
-    ]),
+    ...joined.map((a): ScriptStep => ({ delay: 900, event: { type: 'join', agentId: a.id, how: 'volunteered' } })),
+    ...work.flatMap(({ f, a }, i): ScriptStep[] => {
+      const text = `Placeholder: I would search ${f.name} for passages that answer this.`;
+      return [
+        { delay: 900, event: { type: 'assign', agentId: a.id, fileId: f.id } },
+        { delay: 700, event: { type: 'reading', agentId: a.id } },
+        { delay: 1200, event: { type: 'say', agentId: a.id, citations: [cites[i]], text } },
+        { delay: 400, event: { type: 'note', note: {
+          id: uid('n'), fileId: f.id, authorId: a.id, kind: 'finding', text, citations: [cites[i]],
+          createdAt: new Date().toISOString(), weight: 'normal' } } },
+      ];
+    }),
     { delay: 1500, event: { type: 'say', agentId: ORCHESTRATOR, text: 'Placeholder: I have what I need. Returning the findings.' } },
     { delay: 1200, event: { type: 'leave', agentIds: joined.map((a) => a.id) } },
     { delay: 900, event: { type: 'answer', citations: cites, placeholder: true,
-      text: `No backend is connected yet, so this is a simulated answer. ${joined.map((a, i) => `${a.name} [${i + 1}]`).join(' and ')} took part in the huddle.` } },
+      text: `No backend is connected yet, so this is a simulated answer. The huddle looked at ${work.map((w, i) => `${w.f.name} [${i + 1}]`).join(' and ')}.` } },
   ];
 }
 
@@ -92,7 +99,12 @@ export const mockBackend: Backend = {
   listAgents: (ws) => copy(data[ws].agents),
   listSessions: (ws) => copy([...data[ws].sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))),
   getMessages: (ws, sessionId) => copy(data[ws].messages[sessionId] ?? []),
+  listNotes: (ws) => copy(data[ws].notes),
   getContextMap: (ws) => copy(data[ws].map),
+
+  async setNoteWeight(ws, noteIds, weight) {
+    for (const n of data[ws].notes) if (noteIds.includes(n.id)) n.weight = weight;
+  },
 
   createSession(ws, title) {
     const session: Session = { id: uid('s'), title, updatedAt: new Date().toISOString(), messageCount: 0 };
@@ -103,12 +115,20 @@ export const mockBackend: Backend = {
   async uploadFile(ws, { name, size }) {
     const id = uid('f');
     const type = typeOf(name);
-    data[ws].files.push({
-      id, name, type, sizeKb: Math.max(1, Math.round(size / 1024)), uploadedAt: new Date().toISOString(),
-      summary: 'No summary yet. A translator will write one once a backend is connected.',
-    });
-    data[ws].agents.push({ id: id.replace('f-', 'a-'), name, fileIds: [id] });
+    // The file is stored on its own. No agent is created for it.
+    data[ws].files.push({ id, name, type, sizeKb: Math.max(1, Math.round(size / 1024)), uploadedAt: new Date().toISOString() });
     data[ws].map.nodes.push({ id, label: name, kind: 'file' });
+  },
+
+  async createAgent(ws, { name, specialty }) {
+    data[ws].agents.push({ id: uid('a'), name, specialty });
+  },
+
+  async addNote(ws, { fileId, text }) {
+    data[ws].notes.push({
+      id: uid('n'), fileId, authorId: 'user', kind: 'interpretation', text, citations: [],
+      createdAt: new Date().toISOString(), weight: 'normal',
+    });
   },
 
   async *ask(ws, sessionId, question, signal) {
@@ -120,6 +140,7 @@ export const mockBackend: Backend = {
         data[ws].map.nodes.push(...event.nodes);
         data[ws].map.links.push(...event.links);
       }
+      if (event.type === 'note') data[ws].notes.push(structuredClone(event.note));
       yield structuredClone(event);
     }
     const session = data[ws].sessions.find((s) => s.id === sessionId);
@@ -131,8 +152,10 @@ export const mockBackend: Backend = {
 
   async askTranslator(ws, agentId) {
     await new Promise((resolve) => setTimeout(resolve, 600));
-    const agent = data[ws].agents.find((a) => a.id === agentId)!;
-    const file = data[ws].files.find((f) => f.id === agent.fileIds[0]);
-    return { text: `Simulated reply. Here is what I hold: ${file?.summary ?? 'no files yet.'}`, citations: [] };
+    const mine = data[ws].notes.filter((n) => n.authorId === agentId && n.weight !== 'off');
+    const text = mine.length
+      ? `Simulated reply. I have ${mine.length} active note${mine.length === 1 ? '' : 's'} here. The latest: ${mine[mine.length - 1].text}`
+      : 'Simulated reply. I have not written any notes in this workspace yet.';
+    return { text, citations: [] };
   },
 };

@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { backend } from './backend';
 import { ORCHESTRATOR } from './backend/types';
-import type { Agent, AgentEvent, ChatMsg, Citation, ContextMap, FileItem, Session, Workspace } from './backend/types';
+import type { Agent, AgentEvent, ChatMsg, Citation, ContextMap, FileItem, Note, Session, Weight, Workspace } from './backend/types';
 import { Chat } from './Chat';
 import type { ChatMode } from './Chat';
-import { AgentCard, CitationPanel, ContextMapPanel, Explorer, Sessions } from './Panels';
+import { AgentCard, AgentsPanel, CitationPanel, ContextMapPanel, Explorer, FileCard, Sessions } from './Panels';
+import type { NoteActions } from './Panels';
 import { Stage } from './Stage';
 import type { Huddle } from './Stage';
 // Demo-only imports: the "Run demo" button and its controls drive the mock's clock.
 import { clock, resetDemo } from './backend/mock';
 import { DEMO_QUESTION, DEMO_WORKSPACE } from './demo/scenario';
 
-const emptyHuddle: Huddle = { members: [], bubble: null, reading: null, pulse: 0, log: [] };
+const emptyHuddle: Huddle = { members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [] };
 const MODES: ChatMode[] = ['bar', 'half', 'full'];
 const SPEEDS = [0.5, 1, 2, 4];
 let counter = 0;
@@ -22,28 +23,34 @@ export default function App() {
   const [ws, setWs] = useState('mine');
   const [files, setFiles] = useState<FileItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [map, setMap] = useState<ContextMap>({ nodes: [], links: [] });
   const [sid, setSid] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Record<string, ChatMsg[]>>({});
   const [huddle, setHuddle] = useState<Huddle>(emptyHuddle);
   const [mode, setMode] = useState<ChatMode>('half');
-  const [panel, setPanel] = useState<null | 'E' | 'S' | 'C'>(null);
+  const [panel, setPanel] = useState<null | 'E' | 'A' | 'S' | 'C'>(null);
   const [cite, setCite] = useState<Citation | null>(null);
-  const [card, setCard] = useState<string | null>(null);
+  // The file or the agent whose card is open. They are separate things with separate cards.
+  const [card, setCard] = useState<{ kind: 'file' | 'agent'; id: string } | null>(null);
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [theme, setTheme] = useState(() => (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   const ctrl = useRef<AbortController | null>(null);
   const names = useRef<Record<string, string>>({});
+  const fileNames = useRef<Record<string, string>>({});
 
-  const nameOf = (id: string) => (id === ORCHESTRATOR ? 'Orchestrator' : names.current[id] ?? id);
+  const nameOf = (id: string) => (id === ORCHESTRATOR ? 'Orchestrator' : id === 'user' ? 'You' : names.current[id] ?? id);
+  const fileName = (id: string) => files.find((f) => f.id === id)?.name ?? fileNames.current[id] ?? id;
 
   const refresh = async (id: string) => {
-    const [f, a, s, m] = await Promise.all([
-      backend.listFiles(id), backend.listAgents(id), backend.listSessions(id), backend.getContextMap(id),
+    const [f, a, s, m, n] = await Promise.all([
+      backend.listFiles(id), backend.listAgents(id), backend.listSessions(id), backend.getContextMap(id), backend.listNotes(id),
     ]);
+    fileNames.current = Object.fromEntries(f.map((x) => [x.id, x.name]));
+    setNotes(n);
     names.current = Object.fromEntries(a.map((x) => [x.id, x.name]));
     setFiles(f); setAgents(a); setSessions(s); setMap(m);
     return s;
@@ -86,8 +93,18 @@ export default function App() {
         setHuddle((h) => ({ ...h, members: [...h.members, ev.agentId], log: log(h, 'system', text) }));
         break;
       }
+      case 'assign': {
+        const text = `${nameOf(ev.agentId)} was given ${fileName(ev.fileId)}`;
+        patch({ status: text });
+        setHuddle((h) => ({ ...h, working: { ...h.working, [ev.agentId]: ev.fileId }, log: log(h, 'system', text) }));
+        break;
+      }
+      case 'note':
+        setNotes((n) => [...n, ev.note]);
+        setHuddle((h) => ({ ...h, log: log(h, 'system', `${nameOf(ev.note.authorId)} saved a note on ${fileName(ev.note.fileId)}`) }));
+        break;
       case 'reading':
-        patch({ status: `${nameOf(ev.agentId)} is reading its file` });
+        patch({ status: `${nameOf(ev.agentId)} is reading` });
         setHuddle((h) => ({ ...h, reading: ev.agentId, bubble: null }));
         break;
       case 'say':
@@ -95,7 +112,7 @@ export default function App() {
         setHuddle((h) => ({ ...h, reading: null, bubble: { agentId: ev.agentId, text: ev.text }, log: log(h, ev.agentId, ev.text, ev.citations) }));
         break;
       case 'leave':
-        setHuddle((h) => ({ ...h, members: h.members.filter((m) => !ev.agentIds.includes(m)), bubble: null, reading: null, log: log(h, 'system', 'The huddle ended') }));
+        setHuddle((h) => ({ ...h, members: h.members.filter((m) => !ev.agentIds.includes(m)), working: {}, bubble: null, reading: null, log: log(h, 'system', 'The huddle ended') }));
         break;
       case 'context':
         setMap((m) => ({ nodes: [...m.nodes, ...ev.nodes], links: [...m.links, ...ev.links] }));
@@ -153,8 +170,26 @@ export default function App() {
     setSid(s.id);
   };
 
+  const createAgent = async (name: string, specialty: string) => {
+    await backend.createAgent(ws, { name, specialty });
+    const a = await backend.listAgents(ws);
+    names.current = Object.fromEntries(a.map((x) => [x.id, x.name]));
+    setAgents(a);
+  };
+  const addNote = async (fileId: string, text: string) => {
+    await backend.addNote(ws, { fileId, text });
+    setNotes(await backend.listNotes(ws));
+  };
+  const setWeight = async (noteIds: string[], weight: Weight) => {
+    await backend.setNoteWeight(ws, noteIds, weight);
+    setNotes(await backend.listNotes(ws));
+  };
+  const openCite = (c: Citation) => { setCite(c); setCard(null); };
+  const noteActions: NoteActions = { nameOf, fileName, onWeight: setWeight, onCite: openCite };
+
   const resize = (by: number) => setMode((m) => MODES[Math.min(2, Math.max(0, MODES.indexOf(m) + by))]);
-  const cardAgent = agents.find((a) => a.id === card);
+  const cardAgent = card?.kind === 'agent' ? agents.find((a) => a.id === card.id) : undefined;
+  const cardFile = card?.kind === 'file' ? files.find((f) => f.id === card.id) : undefined;
 
   return (
     <div className="app">
@@ -177,15 +212,18 @@ export default function App() {
 
       <div className="body">
         <nav className="rail">
-          {([['E', 'Explorer'], ['S', 'Sessions'], ['C', 'Context map']] as const).map(([key, label]) => (
+          {([['E', 'Files'], ['A', 'Agents'], ['S', 'Sessions'], ['C', 'Context map']] as const).map(([key, label]) => (
             <button key={key} className={panel === key ? 'on' : ''} title={label} aria-label={label}
               onClick={() => setPanel(panel === key ? null : key)}>{key}</button>
           ))}
         </nav>
 
         <main className={`main mode-${mode}`}>
-          <Stage agents={agents} files={files} huddle={huddle} highlight={cite?.agentId ?? card} nameOf={nameOf}
-            onAgent={(id) => { setCard(id); setCite(null); }} onMore={() => setPanel('E')} onCite={setCite} />
+          <Stage agents={agents} files={files} notes={notes} huddle={huddle} nameOf={nameOf}
+            litAgent={cite?.agentId ?? cardAgent?.id ?? null} litFile={cite?.fileId ?? cardFile?.id ?? null}
+            onAgent={(id) => { setCard({ kind: 'agent', id }); setCite(null); }}
+            onFile={(id) => { setCard({ kind: 'file', id }); setCite(null); }}
+            onMore={() => setPanel('A')} onCite={openCite} />
           <div className="divider">
             <span className="sizer">
               <button onClick={() => resize(-1)} disabled={mode === 'bar'} title="Make the chat smaller" aria-label="Make the chat smaller">↓</button>
@@ -193,13 +231,15 @@ export default function App() {
             </span>
           </div>
           <Chat mode={mode} messages={sid ? msgs[sid] ?? [] : []} busy={running} hasFiles={files.length > 0}
-            onSend={(t) => send(t)} onCite={(c) => { setCite(c); setCard(null); }} />
+            onSend={(t) => send(t)} onCite={openCite} />
 
-          {panel === 'E' && <Explorer files={files} agents={agents} onUpload={upload} onAgent={setCard} onClose={() => setPanel(null)} />}
+          {panel === 'E' && <Explorer files={files} notes={notes} onUpload={upload} onFile={(id) => setCard({ kind: 'file', id })} onClose={() => setPanel(null)} />}
+          {panel === 'A' && <AgentsPanel agents={agents} notes={notes} onAgent={(id) => setCard({ kind: 'agent', id })} onCreate={createAgent} onClose={() => setPanel(null)} />}
           {panel === 'S' && <Sessions sessions={sessions} current={sid} onOpen={setSid} onNew={newSession} onClose={() => setPanel(null)} />}
           {panel === 'C' && <ContextMapPanel map={map} onClose={() => setPanel(null)} />}
-          {cite && <CitationPanel citation={cite} file={files.find((f) => f.id === cite.fileId)} onClose={() => setCite(null)} />}
-          {cardAgent && <AgentCard key={cardAgent.id} ws={ws} agent={cardAgent} files={files} onClose={() => setCard(null)} />}
+          {cite && <CitationPanel citation={cite} file={files.find((f) => f.id === cite.fileId)} foundBy={nameOf(cite.agentId)} onClose={() => setCite(null)} />}
+          {cardFile && <FileCard key={cardFile.id} file={cardFile} notes={notes} actions={noteActions} onAddNote={(t) => addNote(cardFile.id, t)} onClose={() => setCard(null)} />}
+          {cardAgent && <AgentCard key={cardAgent.id} ws={ws} agent={cardAgent} notes={notes} actions={noteActions} onClose={() => setCard(null)} />}
         </main>
       </div>
     </div>

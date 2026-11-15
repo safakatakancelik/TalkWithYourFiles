@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ORCHESTRATOR } from './backend/types';
-import type { Agent, Citation, FileItem } from './backend/types';
+import type { Agent, Citation, FileItem, Note } from './backend/types';
 
 export interface LogEntry {
   who: string;
@@ -11,6 +11,8 @@ export interface LogEntry {
 
 export interface Huddle {
   members: string[];
+  /** Which file each translator has been given for this question: agent id to file id. */
+  working: Record<string, string>;
   bubble: { agentId: string; text: string } | null;
   reading: string | null;
   /** Goes up by one on every broadcast, to restart the pulse animation. */
@@ -25,20 +27,23 @@ const CENTER_Y = 50;
 interface Props {
   agents: Agent[];
   files: FileItem[];
+  notes: Note[];
   huddle: Huddle;
-  highlight: string | null;
+  litAgent: string | null;
+  litFile: string | null;
   nameOf: (id: string) => string;
   onAgent: (id: string) => void;
+  onFile: (id: string) => void;
   onMore: () => void;
   onCite: (c: Citation) => void;
 }
 
-export function Stage({ agents, files, huddle, highlight, nameOf, onAgent, onMore, onCite }: Props) {
+export function Stage({ agents, files, notes, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, onCite }: Props) {
   const [logOpen, setLogOpen] = useState(true);
   const logEnd = useRef<HTMLDivElement>(null);
   useEffect(() => { logEnd.current?.scrollIntoView({ block: 'nearest' }); }, [huddle.log.length]);
 
-  const { members } = huddle;
+  const { members, working } = huddle;
   const idle = agents.filter((a) => !members.includes(a.id));
   const shown = agents.length > MAX_SHOWN ? idle.slice(0, Math.max(0, MAX_SHOWN - 1 - members.length)) : idle;
   const hidden = idle.length - shown.length;
@@ -50,20 +55,41 @@ export function Stage({ agents, files, huddle, highlight, nameOf, onAgent, onMor
     const left = i < half;
     const along = left ? (i + 0.5) / half : (i - half + 0.5) / (slots - half);
     const t = ((left ? 215 - 90 * along : 55 - 90 * along) * Math.PI) / 180;
-    return { left: `calc(${50 + Math.cos(t) * 40}% + 0px)`, top: `calc(${CENTER_Y - Math.sin(t) * 38}% + 0px)` };
+    return { left: `calc(${50 + Math.cos(t) * 38}% + 0px)`, top: `calc(${CENTER_Y - Math.sin(t) * 38}% + 0px)` };
   };
   const spot = (a: Agent): CSSProperties => {
     const j = members.indexOf(a.id);
     if (j < 0) return idleSpot(shown.indexOf(a));
     const t = Math.PI * (1.15 - (1.3 * (j + 0.5)) / members.length);
-    return { left: `calc(50% + ${Math.cos(t) * 62}px)`, top: `calc(${CENTER_Y}% + ${-Math.sin(t) * 62}px)` };
+    return { left: `calc(50% + ${Math.cos(t) * 64}px)`, top: `calc(${CENTER_Y}% + ${-Math.sin(t) * 64}px)` };
   };
-  const badge = (a: Agent) =>
-    a.fileIds.length === 1 ? files.find((f) => f.id === a.fileIds[0])?.type ?? 'file' : `${a.fileIds.length} files`;
+  const fileName = (id: string) => files.find((f) => f.id === id)?.name ?? id;
   const active = members.length > 0;
 
   return (
     <section className="stage">
+      {/* Files live on their own shelf. They are never drawn as agents. */}
+      <aside className="shelf">
+        <header><strong>Files</strong><span className="muted">{files.length}</span></header>
+        <div className="tiles">
+          {files.length === 0 && <p className="muted">No files yet. Upload some in the explorer (E), or press Run demo.</p>}
+          {files.map((f) => {
+            const readers = Object.keys(working).filter((a) => working[a] === f.id);
+            const count = notes.filter((n) => n.fileId === f.id).length;
+            return (
+              <button key={f.id} className={`tile ${readers.length ? 'busy' : ''} ${litFile === f.id ? 'lit' : ''}`} onClick={() => onFile(f.id)} title={f.name}>
+                <span className="tile-name">{f.name}</span>
+                <span className="tile-meta">
+                  <span className={`badge t-${f.type}`}>{f.type}</span>
+                  <span className="muted">{count} note{count === 1 ? '' : 's'}</span>
+                </span>
+                {readers.length > 0 && <span className="tile-by">Open with {readers.map(nameOf).join(', ')}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
       <div className="floor">
         <div className={`huddle ${active ? 'active' : ''}`} style={{ top: `${CENTER_Y}%` }}>
           {!active && <span>huddle</span>}
@@ -71,12 +97,14 @@ export function Stage({ agents, files, huddle, highlight, nameOf, onAgent, onMor
 
         {agents.filter((a) => members.includes(a.id) || shown.includes(a)).map((a) => (
           <button key={a.id} style={spot(a)} onClick={() => onAgent(a.id)} title={a.name}
-            className={`agent ${members.includes(a.id) ? 'in' : ''} ${highlight === a.id ? 'lit' : ''}`}>
+            className={`agent ${members.includes(a.id) ? 'in' : ''} ${litAgent === a.id ? 'lit' : ''}`}>
             {huddle.bubble?.agentId === a.id && <span className="bubble">{huddle.bubble.text}</span>}
-            {huddle.reading === a.id && <span className="bubble reading">reading…</span>}
+            {huddle.reading === a.id && <span className="bubble reading">reading {fileName(working[a.id])}…</span>}
             <span className="figure" />
             <span className="label">{a.name}</span>
-            <span className={`badge t-${badge(a)}`}>{badge(a)}</span>
+            {working[a.id]
+              ? <span className="holding" title={fileName(working[a.id])}>{fileName(working[a.id])}</span>
+              : <span className="badge">{a.specialty}</span>}
           </button>
         ))}
 
@@ -88,14 +116,12 @@ export function Stage({ agents, files, huddle, highlight, nameOf, onAgent, onMor
         )}
 
         <div className={`agent orchestrator ${active ? 'in' : ''}`}
-          style={{ left: '50%', top: `calc(${CENTER_Y}% + ${active ? 66 : 138}px)` }}>
+          style={{ left: '50%', top: `calc(${CENTER_Y}% + ${active ? 70 : 138}px)` }}>
           {huddle.pulse > 0 && <span key={huddle.pulse} className="pulse" />}
           {huddle.bubble?.agentId === ORCHESTRATOR && <span className="bubble side">{huddle.bubble.text}</span>}
           <span className="figure" />
           <span className="label">Orchestrator</span>
         </div>
-
-        {agents.length === 0 && <p className="hint">No files yet. Open the explorer (E) to upload some, or press Run demo.</p>}
       </div>
 
       {logOpen ? (

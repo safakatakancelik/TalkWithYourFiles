@@ -11,7 +11,9 @@ const ws = DEMO_WORKSPACE.id;
 test('the demo question triggers every kind of agent work and a fully cited answer', async () => {
   resetDemo();
   clock.speed = 1000;
-  const [files, agents, before] = await Promise.all([backend.listFiles(ws), backend.listAgents(ws), backend.getContextMap(ws)]);
+  const [files, agents, before, notesBefore] = await Promise.all([
+    backend.listFiles(ws), backend.listAgents(ws), backend.getContextMap(ws), backend.listNotes(ws),
+  ]);
   const session = await backend.createSession(ws, 'test');
 
   const events: AgentEvent[] = [];
@@ -21,11 +23,30 @@ test('the demo question triggers every kind of agent work and a fully cited answ
   // The orchestrator asks every translator.
   expect(of('broadcast')[0].to.sort()).toEqual(agents.map((a) => a.id).sort());
 
-  // Three volunteer, one is called directly, two stay out.
+  // Three volunteer, one is called directly, one stays out.
   const joins = of('join');
   expect(joins.filter((j) => j.how === 'volunteered')).toHaveLength(3);
-  expect(joins.filter((j) => j.how === 'called').map((j) => j.agentId)).toEqual(['a-pricing']);
-  expect(agents.length - joins.length).toBe(2);
+  expect(joins.filter((j) => j.how === 'called').map((j) => j.agentId)).toEqual(['a-t2']);
+  expect(agents.length - joins.length).toBe(1);
+
+  // Files and translators are independent: the orchestrator pairs them per question.
+  const assigns = of('assign');
+  expect(assigns.map((a) => a.agentId).sort()).toEqual(joins.map((j) => j.agentId).sort());
+  for (const a of assigns) expect(files.some((f) => f.id === a.fileId)).toBe(true);
+
+  // Each translator stores what it found as a note on the file it was given, with a citation into that file.
+  const written = of('note').map((e) => e.note);
+  expect(written).toHaveLength(4);
+  for (const n of written) {
+    expect(assigns.some((a) => a.agentId === n.authorId && a.fileId === n.fileId)).toBe(true);
+    expect(n.citations.length).toBeGreaterThan(0);
+    for (const c of n.citations) expect(c.fileId).toBe(n.fileId);
+  }
+  expect((await backend.listNotes(ws)).length).toBe(notesBefore.length + 4);
+
+  // A note can be turned off without touching the file or the agent.
+  await backend.setNoteWeight(ws, [written[0].id], 'off');
+  expect((await backend.listNotes(ws)).find((n) => n.id === written[0].id)?.weight).toBe('off');
 
   // Only agents in the huddle speak, and everyone leaves before the answer.
   const members = new Set(['orchestrator', ...joins.map((j) => j.agentId)]);
@@ -39,7 +60,7 @@ test('the demo question triggers every kind of agent work and a fully cited answ
   expect(new Set(markers)).toEqual(new Set(answer.citations.map((c) => c.n)));
   for (const c of answer.citations) {
     expect(files.some((f) => f.id === c.fileId)).toBe(true);
-    expect(agents.find((a) => a.id === c.agentId)?.fileIds).toContain(c.fileId);
+    expect(agents.some((a) => a.id === c.agentId)).toBe(true);
     expect(c.passage).toContain(c.quote);
   }
 
