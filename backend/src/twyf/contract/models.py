@@ -152,5 +152,17 @@ class ErrorBody(Wire):
     error: ErrorInfo
 
 
+class FileText(Wire):
+    text: str
+    start: int
+    end: int
+    total: int
+
+
+class SubmitResult(Wire):
+    accepted: bool
+    errors: Opt[list[str]] = None
+
+
 def dump(model: Wire) -> dict[str, Any]:
     return model.model_dump(mode="json", by_alias=True, exclude_none=True)

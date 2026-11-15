@@ -161,6 +161,18 @@
           "ws": "ws_x"
         }
       }
+    },
+    "FileText": {
+      "text": "The lease ends",
+      "start": 0,
+      "end": 14,
+      "total": 900
+    },
+    "SubmitResult": {
+      "accepted": false,
+      "errors": [
+        "quote_not_found: 'x'"
+      ]
     }
   },
   "events": {
