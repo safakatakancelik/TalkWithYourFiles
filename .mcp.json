@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "twyf": {
+      "command": "uv",
+      "args": ["run", "--directory", "backend", "twyf", "mcp"],
+      "env": { "TWYF_API_URL": "http://127.0.0.1:8321" }
+    }
+  }
+}
