@@ -1,0 +1,20 @@
+{
+  "models": {
+    "Workspace": {"id": "ws_1", "name": "My workspace"},
+    "FileItem": {"id": "f_1", "name": "lease.pdf", "type": "pdf", "sizeKb": 12, "uploadedAt": "2026-11-15T10:00:00.000Z", "status": "ready", "version": 2},
+    "Agent": {"id": "a_1", "name": "Translator 1", "specialty": "generic"},
+    "Citation": {"n": 1, "fileId": "f_1", "agentId": "a_1", "location": "Page 3", "passage": "The lease ends on 30 June 2029.", "quote": "30 June 2029", "id": "c_1", "extractionId": "x_1", "start": 18, "end": 30, "page": 3, "fileName": "lease.pdf", "fileVersion": 1},
+    "Note": {"id": "n_1", "fileId": "f_1", "authorId": "orchestrator", "kind": "summary", "text": "The lease runs to 2029 [1].", "citations": [{"n": 1, "fileId": "f_1", "agentId": "a_1", "location": "Page 3", "passage": "The lease ends on 30 June 2029.", "quote": "30 June 2029"}], "createdAt": "2026-11-15T10:00:00.000Z", "weight": "normal", "authorName": "Translator 1", "fileVersion": 1},
+    "Session": {"id": "s_1", "title": "Lease questions", "updatedAt": "2026-11-15T10:00:00.000Z", "messageCount": 2},
+    "Unverified": {"text": "Rent rises by 10%.", "reason": "The passage says 8%."},
+    "ChatMsg": {"id": "m_1", "role": "assistant", "text": "It ends on 30 June 2029 [1].", "citations": [{"n": 1, "fileId": "f_1", "agentId": "a_1", "location": "Page 3", "passage": "The lease ends on 30 June 2029.", "quote": "30 June 2029"}], "pending": false, "status": "done", "placeholder": false, "unverified": [{"text": "Rent rises by 10%.", "reason": "The passage says 8%."}], "error": "none"},
+    "MapNode": {"id": "e_1", "label": "Acme Ltd", "kind": "entity"},
+    "MapLink": {"from": "f_1", "to": "e_1"},
+    "ContextMap": {"nodes": [{"id": "f_1", "label": "lease.pdf", "kind": "file"}], "links": [{"from": "f_1", "to": "e_1"}]},
+    "Claim": {"id": "k_1", "text": "Margin is 52.9%.", "kind": "derived", "citations": [1, 2], "derivedFrom": ["k_2"], "calculation": "1 - 13.66 / 29.00"},
+    "Verdict": {"claimId": "k_1", "verdict": "supported", "reason": "The passages state both figures."},
+    "TranslatorReply": {"text": "The lease ends in 2029.", "citations": []},
+    "EventRecord": {"id": 7, "occurredAt": "2026-11-15T10:00:00.000Z", "eventType": "file.uploaded", "actorId": "u_local", "source": "api", "workspaceId": "ws_1", "sessionId": "s_1", "questionId": "q_1", "roundId": "r_1", "turnId": "t_1", "causeEventId": 6, "entityType": "file", "entityId": "f_1", "payload": {"name": "lease.pdf"}},
+    "ErrorBody": {"error": {"code": "not_found", "message": "No such workspace", "details": {"ws": "ws_x"}}}
+  }
+}
