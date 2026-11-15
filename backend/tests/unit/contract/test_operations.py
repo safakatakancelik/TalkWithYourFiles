@@ -1,8 +1,6 @@
 import inspect
 import re
 
-import pytest
-
 from twyf.contract.base import Wire
 from twyf.contract.operations import OPERATIONS, get_operation, resolve_handler
 from twyf.recording.context import RequestContext
@@ -37,14 +35,10 @@ def test_path_fields_are_input_fields() -> None:
             assert field in op.input.model_fields, (op.name, field)
 
 
-def test_stubs_raise_not_implemented() -> None:
-    ctx = RequestContext(actor_id="u_local", source="api", user_id="u_local", request_id="test")
-    op = get_operation("fail_turn")
-    assert op.input is not None
-    with pytest.raises(ServiceError) as raised:
-        resolve_handler(op)(ctx, op.input.model_validate({"turnId": "t_1", "leaseToken": "x", "reason": "r"}))
-    assert raised.value.code == "internal"
-    assert HTTP_STATUS[raised.value.code] == 500
+def test_error_codes_have_http_statuses() -> None:
+    assert HTTP_STATUS == {"validation": 400, "not_found": 404, "conflict": 409, "too_large": 413, "internal": 500}
+    error = ServiceError("conflict", "busy", {"id": 1})
+    assert (error.code, error.message, error.details, str(error)) == ("conflict", "busy", {"id": 1}, "conflict: busy")
 
 
 def test_request_context_helpers() -> None:

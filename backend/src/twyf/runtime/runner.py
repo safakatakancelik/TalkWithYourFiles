@@ -88,6 +88,10 @@ class TurnRunner:
                 continue
             except RuntimeError_ as failure:
                 error = str(failure)
+                if failure.code == "cancelled":
+                    await asyncio.to_thread(self._end, agent_ctx, workspace_id, turn_id, definition_version_id,
+                                            "cancelled", error, question_id, round_id)  # fmt: skip
+                    raise TurnFailed(turn_type, agent_id, error) from failure
                 state = "timed_out" if failure.code == "timeout" else "failed"
                 await asyncio.to_thread(self._end, agent_ctx, workspace_id, turn_id, definition_version_id, state,
                                         error, question_id, round_id)  # fmt: skip
