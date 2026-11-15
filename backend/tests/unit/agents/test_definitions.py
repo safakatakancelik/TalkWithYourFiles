@@ -206,3 +206,26 @@ def test_type2_history_config(conn: sqlite3.Connection, settings: Settings, even
     assert rows[0]["valid_to"] == rows[1]["valid_from"] and rows[1]["valid_to"] == rows[2]["valid_from"]
     assert len(events("config.changed")) == 3
     assert events("config.changed")[0].actor_id == "system"
+
+
+def test_skill_texts_name_their_fields() -> None:
+    from twyf.contract.turns import TURN_MODELS
+
+    loaded = load_folder(REPO_ROOT / ".agents")
+    for turn_type, (_, output_model, skills) in TURN_MODELS.items():
+        [own] = [s for s in skills if s != "cite-passages"]
+        body = loaded.skills[own].body
+        for name, field in output_model.model_fields.items():
+            assert f"`{field.alias or name}`" in body, (turn_type, field.alias or name)
+    assert all(
+        phrase in loaded.skills["verify-claims"].body
+        for phrase in (
+            "outside knowledge",
+            "`supported`",
+            "`partly_supported`",
+            "`unsupported`",
+            "at most `partly_supported`",
+        )
+    )
+    assert "passageId" in loaded.skills["cite-passages"].body and "exactly" in loaded.skills["cite-passages"].body
+    assert "From the opening of the file:" in loaded.skills["first-read"].body
