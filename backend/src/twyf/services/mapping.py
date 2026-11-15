@@ -21,3 +21,13 @@ def actor_to_wire(conn: sqlite3.Connection, workspace_id: str, actor_id: str) ->
     if row["workspace_id"] == workspace_id and row["agent_kind"] == "verifier":
         return VERIFIER
     return actor_id
+
+
+def actor_name(conn: sqlite3.Connection, actor_id: str) -> str:
+    """An agent's last name (also when deleted), the user's name, or the id."""
+    row = conn.execute(
+        "SELECT name FROM agent_versions WHERE agent_id = ? ORDER BY version DESC LIMIT 1", (actor_id,)
+    ).fetchone()
+    if row is None:
+        row = conn.execute("SELECT name FROM users WHERE id = ?", (actor_id,)).fetchone()
+    return row["name"] if row is not None else actor_id

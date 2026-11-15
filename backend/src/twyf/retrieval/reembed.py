@@ -1,10 +1,11 @@
-"""Embeds every chunk that has no vector for the configured model, in batches. Old vectors are kept."""
+"""Embeds every chunk and note that has no vector for the configured model, in batches. Old vectors are kept."""
 
 import sqlite3
 from collections.abc import Callable
 
 from twyf.db.connection import transaction
 from twyf.db.repos import embeddings
+from twyf.db.repos import notes as notes_repo
 from twyf.recording.context import RequestContext
 from twyf.retrieval.embedder import Embedder
 
@@ -42,6 +43,15 @@ def reembed(
         with transaction(conn):
             model = embeddings.model_id(conn, embedder)
         missing = embeddings.chunks_without_vectors(conn, model)
-        return embed_chunks(conn, embedder, [(r["id"], r["workspace_id"], r["text"]) for r in missing], batch)
+        written = embed_chunks(conn, embedder, [(r["id"], r["workspace_id"], r["text"]) for r in missing], batch)
+        notes = notes_repo.without_vectors(conn, model)
+        for start in range(0, len(notes), batch):
+            part = notes[start : start + batch]
+            vectors = embedder.embed([r["text"] for r in part])
+            with transaction(conn):
+                for row, vector in zip(part, vectors, strict=True):
+                    notes_repo.set_vector(conn, row["id"], model, row["workspace_id"], vector)
+            written += len(part)
+        return written
     finally:
         conn.close()

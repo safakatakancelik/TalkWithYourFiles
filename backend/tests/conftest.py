@@ -100,3 +100,30 @@ def retriever(settings: Settings) -> HybridRetriever:
     from twyf.retrieval.vector_index import SqliteVecIndex
 
     return HybridRetriever(settings, get_embedder(settings), SqliteVecIndex())
+
+
+def cite(conn: sqlite3.Connection, ctx: RequestContext, ws_id: str, file_id: str, quote: str, agent_id: str) -> str:
+    """A citation of `quote` from the chunk of the file's current version that contains it."""
+    from twyf.citations.locate import create_citation
+
+    row = conn.execute(
+        "SELECT c.id FROM chunks c JOIN extractions x ON x.id = c.extraction_id"
+        " JOIN v_files f ON f.file_version_id = x.file_version_id WHERE f.id = ? AND instr(c.text, ?) > 0",
+        (file_id, quote),
+    ).fetchone()
+    return create_citation(
+        conn, ctx, workspace_id=ws_id, passage_id=f"p{row[0]}", quote=quote, agent_id=agent_id, turn_id=None
+    ).id
+
+
+def agent_note(
+    conn: sqlite3.Connection, ctx: RequestContext, ws_id: str, file_id: str, text: str, citation_ids: list[str],
+    agent_id: str, kind: str = "finding",
+) -> str:  # fmt: skip
+    from twyf.services.notes import create_agent_note
+
+    with transaction(conn):
+        return create_agent_note(
+            conn, ctx, workspace_id=ws_id, file_id=file_id, author_id=agent_id, kind=kind, text=text,
+            citation_ids=citation_ids, numbers=[], question_id=None, turn_id=None,
+        ).id  # fmt: skip

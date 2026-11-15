@@ -5,7 +5,8 @@ from twyf.config import Settings
 from twyf.contract.models import Workspace
 from twyf.recording.context import RequestContext
 from twyf.retrieval import keyword
-from twyf.retrieval.hybrid import HybridRetriever, first_chunks, rrf
+from twyf.retrieval.fusion import rrf
+from twyf.retrieval.hybrid import HybridRetriever, first_chunks
 
 
 def _file_of(conn: sqlite3.Connection, chunk_id: int) -> str:

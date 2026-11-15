@@ -10,12 +10,12 @@ from twyf.db.connection import connect, transaction
 from twyf.db.repos import embeddings
 from twyf.recording.context import RequestContext
 from twyf.recording.recorder import record
-from twyf.retrieval import keyword
+from twyf.retrieval import keyword, weights
 from twyf.retrieval.embedder import Embedder
+from twyf.retrieval.fusion import rrf
 from twyf.retrieval.vector_index import VectorIndex
 
 CANDIDATES = 20
-RRF_K = 60
 
 
 class Passage(Wire):
@@ -32,15 +32,6 @@ class Retriever(Protocol):
     def search(
         self, ctx: RequestContext, *, workspace_id: str, query: str, file_ids: list[str] | None, k: int
     ) -> list[Passage]: ...
-
-
-def rrf(lists: list[list[int]]) -> dict[int, float]:
-    """Reciprocal rank fusion: score = sum(1 / (60 + rank)) over the lists a chunk appears in. Ranks from 1."""
-    scores: dict[int, float] = {}
-    for ranked in lists:
-        for rank, chunk_id in enumerate(ranked, start=1):
-            scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank)
-    return scores
 
 
 def passages(conn: sqlite3.Connection, scored: list[tuple[int, float]]) -> list[Passage]:
@@ -120,8 +111,8 @@ class HybridRetriever:
                 )
                 lists.append([c for c, _ in found])
             fused = rrf(lists)
-            if boost is not None:
-                fused = {c: s * boost(c) for c, s in fused.items()}
+            factor = boost if boost is not None else weights.passage_boost(conn, workspace_id)
+            fused = {c: s * factor(c) for c, s in fused.items()}
             ranked = sorted(fused.items(), key=lambda item: (-item[1], item[0]))[:k]
             result = passages(conn, ranked)
             with transaction(conn):
