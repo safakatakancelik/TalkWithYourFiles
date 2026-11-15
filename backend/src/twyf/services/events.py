@@ -1,8 +1,20 @@
 from twyf.contract.models import EventRecord
 from twyf.contract.operations import ListEventsInput
+from twyf.db.repos import events as events_repo
 from twyf.recording.context import RequestContext
-from twyf.services.errors import ServiceError
+from twyf.services import state
 
 
 def list_events(ctx: RequestContext, input: ListEventsInput) -> list[EventRecord]:
-    raise ServiceError("internal", "not implemented")
+    conn = state.connect()
+    try:
+        return events_repo.list(
+            conn,
+            workspace_id=input.workspace,
+            question_id=input.question,
+            event_type=input.type,
+            after=input.after,
+            limit=input.limit,
+        )
+    finally:
+        conn.close()
