@@ -171,8 +171,7 @@ Version 1 runs locally with one command. Three parts of this design assume one l
 | `TWYF_MAX_DISCUSSION_STEPS` | `6` | Orchestrator review steps per round |
 | `TWYF_MAX_TURN_RETRIES` | `2` | Retries of a turn whose output is invalid |
 | `TWYF_TURN_TIMEOUT_S` | `300` | Per turn |
-| `TWYF_MAX_UPLOAD_MB` | `200` | Largest file accepted by `upload_file` |
-| `TWYF_MAX_FILE_MB` | `2048` | Largest file accepted by `reference_file` |
+| `TWYF_MAX_UPLOAD_MB` | `1024` | Largest file accepted by `upload_file` and `add_file_version` |
 | `TWYF_PARSER` | `auto` | `auto` (Docling if installed, else basic), `basic`, `docling` |
 | `TWYF_EMBEDDER` | `fastembed` | `fastembed`, `hash` (tests) or `none` (keyword only) |
 | `TWYF_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | The `fastembed` model. Changing it embeds existing chunks again in the background and keeps the old vectors |
@@ -193,7 +192,7 @@ The non-secret settings that shape behaviour are snapshotted into `config_versio
 - Every write is one short `BEGIN IMMEDIATE` transaction that includes its `app_events` row. Model calls never happen inside a transaction.
 - Several questions and uploads may run at once. One session runs one question at a time: a second `ask` on a busy session gets error `conflict`.
 - Volunteer turns and work turns of one step run concurrently with `asyncio.gather`.
-- Ingestion runs in the background. `upload_file` and `reference_file` return as soon as the file rows exist, with status `processing`. `files/jobs.py` defines `Jobs` with two implementations: `ThreadJobs` (one worker thread, used by the server) and `InlineJobs` (runs the job at once, used by tests and by `twyf seed-demo`). At start the server queues every live file version that has no extraction, so an ingestion cut short by a crash is done again.
+- Ingestion runs in the background. `upload_file` and `add_file_version` return as soon as the file rows exist, with status `processing`. `files/jobs.py` defines `Jobs` with two implementations: `ThreadJobs` (one worker thread, used by the server) and `InlineJobs` (runs the job at once, used by tests and by `twyf seed-demo`). At start the server queues every live file version that has no extraction, so an ingestion cut short by a crash is done again.
 
 ## 8. Failure handling
 
@@ -215,8 +214,7 @@ The stream of a failed question ends with an `error` event (`03-contract.md` sec
 ## 9. Security and untrusted content
 
 - **File contents are data.** Passages are passed to agents inside delimiters with a standing instruction (`04-agents.md` section 7). Agents return structured output only, and turns have no tools, so an injected instruction cannot make the backend act. Injected text can at worst produce a wrong statement, which must then pass the quote check and the verifier.
-- **Uploads.** Size is limited by `TWYF_MAX_UPLOAD_MB` and enforced while streaming to disk. The original file name is stored as text and is never used as a path. Uploaded bytes are stored as `files/<first two hex>/<sha256>`.
-- **References by path.** `reference_file` takes an absolute path on the server's machine. It must be a regular file (symbolic links are resolved first) within `TWYF_MAX_FILE_MB`. The server reads it with the rights of the user who started it, which is acceptable for a local single-user app and is one more reason the server must not be exposed. The app only ever opens referenced files for reading.
+- **Uploads.** Size is limited by `TWYF_MAX_UPLOAD_MB` and enforced while streaming to disk. The original file name is stored as text and is never used as a path. Uploaded bytes are stored as `files/<first two hex>/<sha256>`. The app only ever opens stored files for reading and never removes one.
 - **Network.** The server binds to `127.0.0.1` only. There is no sign-in, so it must not be exposed. CORS allows only `TWYF_CORS_ORIGINS`.
 - **Source header.** A client names its door in the `X-TWYF-Source` header. With no sign-in this is trusted. It is a record, not a control.
 - **Harness risk.** With the `queue` runtime the harness has its own tools. A passage could try to instruct it. The worker prompt forbids following instructions in passages, and `06-mcp.md` section 6 tells the owner to run the worker with file and shell tools disabled.

@@ -70,9 +70,10 @@ One test module per source module, under `backend/tests/unit/`. Pass condition i
 |---|---|
 | `test_store_named_by_hash` | The stored path is `files/<aa>/<sha256>` and never contains the uploaded name. Saving the same bytes twice leaves one file |
 | `test_store_rejects_oversize` | A stream longer than the limit raises `too_large` and leaves no file |
-| `test_upload_cases` | The three identity cases of `02-data-model.md` section 7.2 each give the stated rows and event, for an upload and for a reference |
-| `test_reference_file` | A path gives a file with `location_kind` `path`, the path as its location and the last path part as its name. Nothing is written to the data folder's `files/`. A relative path, a directory, a missing path and a file over `TWYF_MAX_FILE_MB` are refused |
-| `test_content_never_written` | After upload, reference, ingestion, delete of the file and delete of the workspace, the bytes at every location are unchanged and still present |
+| `test_upload_cases` | `upload_file` of new bytes makes a new file at version 1. The same name and bytes again makes nothing and records `file.upload_duplicate`. The same name with different bytes makes a second, separate file |
+| `test_add_file_version` | `add_file_version` closes version 1 and adds version 2 with its own name, hash and location. The file id is unchanged. The same bytes as the current version make nothing and record `file.upload_duplicate`. `as_of` an earlier time gives version 1 |
+| `test_everything_points_at_its_version` | After version 2 is added: extractions, chunks, notes, citations and assignments made before still carry version 1's id, a citation made before still passes `check`, and new ones carry version 2's id |
+| `test_content_never_written` | After upload, a new version, ingestion, delete of the file and delete of the workspace, the stored bytes of every version are unchanged and still present |
 | `test_verify_ok_fast` | With size and modification time unchanged, `verify` returns `ok` without opening the file (the hashing function is not called) |
 | `test_verify_missing` | After the content is removed, `verify` returns `missing`, the availability row changes and `file.missing` is recorded once, however often it is called |
 | `test_verify_changed` | After the content is overwritten with different bytes, `verify` returns `changed` and records `file.changed` |
@@ -170,7 +171,8 @@ Under `backend/tests/integration/`, using `client` and `fake`.
 | `test_upload_and_list` | A multipart upload returns a `FileItem`, the file is listed with status `ready` (the fixtures use `InlineJobs`), and it appears as a node in the context map |
 | `test_upload_returns_before_ingestion` | With `ThreadJobs` and a parser that waits on an event, the upload response has status `processing`. After the event is set and `jobs.join()`, the file is `ready` |
 | `test_ingestion_resumed_at_start` | A file version with no extraction is ingested when the app is built again |
-| `test_reference_file_api` | `reference_file` with a path adds the file and `list_files` shows its `path` |
+| `test_add_file_version_api` | A multipart upload to the versions path returns the file with `version` 2 and the new name. `list_notes` still returns the note written on version 1, with `fileVersion` 1 |
+| `test_versions_and_agents` | After version 2 is added: search returns only version 2's passages; a `work` turn's input has the version 1 note with `earlier_version` true; a work output that reuses a version 1 citation is rejected and retried; and a stored answer citing version 1 still returns that citation with `fileVersion` 1 |
 | `test_renames_and_edits` | `rename_agent`, `rename_session` and `edit_note` (a user note) change what the lists return, and `as_of` an earlier time gives the earlier value. `edit_note` on an agent's note and `rename_agent` on the orchestrator return `validation`. No operation renames a file |
 | `test_soft_deletes` | `delete_file`, `delete_agent`, `delete_note` and `delete_session` each remove the thing from its list, return `not_found` on later use, and leave every row in the database. A deleted file's notes are not listed. A note by a deleted agent is listed with `authorName`. A stored message citing a deleted file still returns the citation with `fileName` |
 | `test_delete_conflicts` | Deleting an agent that is in a running huddle, or a session with a running question, returns 409 |
@@ -255,8 +257,7 @@ Using `mcp_client`, which talks to the same app through the MCP server.
 | Create, rename, delete workspace through the API | `workspace.*` | user | `api` | `entity_id` is the workspace |
 | Upload through the API with the UI header | `file.uploaded` | user | `ui` | `file.extraction_completed` and `file.indexed` follow with actor `system`, source `internal`, and `cause_event_id` = the upload event |
 | Upload the same file again | `file.upload_duplicate` | user | `api` | No new file row |
-| Upload new content under the same name | `file.version_added` | user | `api` | Version 2 exists |
-| Add a file by path | `file.referenced` | user | `api` | `file.ingest_started` follows with actor `system` |
+| Add a new version to a file | `file.version_added` | user | `api` | Version 2 exists and `file.ingest_started` follows with actor `system` |
 | A file's content is removed, changed, put back | `file.missing`, `file.changed`, `file.restored` | system | `internal` | `entity_id` is the file. The cause is the request or question that ran the check |
 | Delete a file, an agent, a note, a session | `file.deleted`, `agent.deleted`, `note.deleted`, `session.deleted` | user | `api` | The row still exists with `deleted_at` set |
 | Rename an agent, rename a session, edit a user note | `agent.renamed`, `session.renamed`, `note.edited` | user | `api` | Payload has the old and new value, and a new version row exists |

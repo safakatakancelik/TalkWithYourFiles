@@ -16,7 +16,7 @@ Part of the revision 2 backend plan. The schema below is complete. Migration `00
 | Entity | Technique | Detail |
 |---|---|---|
 | Workspace name | Type 2 | `workspace_versions` |
-| File content and location | Type 2 | `file_versions`. New content under the same name is a new version. A file's name is its original name and cannot be changed |
+| File versions | Type 2 | `file_versions`. `add_file_version` closes the current version and adds the next. Each version keeps the name it was uploaded with, and no name can be changed |
 | File availability | Type 2 | `file_availability`: `ok`, `missing` or `changed` over time |
 | Agent name, speciality, definition | Type 2 | `agent_versions` |
 | Session title | Type 2 | `session_versions` |
@@ -113,7 +113,7 @@ CREATE TABLE actors (
 ### 4.3 Files
 
 ```sql
--- The app refers to files. It never changes or removes the bytes it refers to. See section 7.2.
+-- The app keeps a copy of every uploaded file and never changes or removes it. See section 7.2.
 CREATE TABLE files (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id),
@@ -127,11 +127,11 @@ CREATE TABLE file_versions (
   workspace_id TEXT NOT NULL REFERENCES workspaces(id),
   version INTEGER NOT NULL,
   content_sha256 TEXT NOT NULL,             -- the identity of the content
-  name TEXT NOT NULL,                       -- the original file name. Never changed
+  name TEXT NOT NULL,                       -- the name this version was uploaded with. Never changed
   file_type TEXT NOT NULL REFERENCES file_types(code),
   size_bytes INTEGER NOT NULL,
-  location_kind TEXT NOT NULL REFERENCES location_kinds(code),   -- store | path | remote
-  location TEXT NOT NULL,                   -- store: files/ab/abcdef... under the data dir. path: an absolute path
+  location_kind TEXT NOT NULL REFERENCES location_kinds(code),   -- always 'store' in version 1
+  location TEXT NOT NULL,                   -- files/ab/abcdef... under the data dir
   mtime_ns INTEGER NOT NULL,                -- modification time seen when the hash was last confirmed
   valid_from TEXT NOT NULL,
   valid_to TEXT,
@@ -659,8 +659,10 @@ CREATE VIEW v_sessions AS
   WHERE s.deleted_at IS NULL;
 
 CREATE VIEW v_notes AS
-  SELECT n.id, n.workspace_id, n.file_id, n.author_id, n.kind, t.text, n.created_at, w.weight
+  SELECT n.id, n.workspace_id, n.file_id, n.file_version_id, fv.version AS file_version,
+         n.author_id, n.kind, t.text, n.created_at, w.weight
   FROM notes n
+  JOIN file_versions fv ON fv.id = n.file_version_id
   JOIN note_versions t ON t.note_id = n.id AND t.valid_to IS NULL
   JOIN note_weights w ON w.note_id = n.id AND w.valid_to IS NULL
   JOIN files f ON f.id = n.file_id AND f.deleted_at IS NULL
@@ -678,10 +680,9 @@ CREATE VIEW v_notes AS
 | `skill.loaded` | versioning | A new skill version is snapshotted | |
 | `config.changed` | versioning | A new config version is snapshotted | |
 | `workspace.created` / `.renamed` / `.deleted` | workspace | The matching operation | |
-| `file.uploaded` | file | A new file arrives as bytes and is kept in the app's store | |
-| `file.referenced` | file | A new file is added by its path, with no copy | |
-| `file.version_added` | file | Different content arrives under an existing name | |
-| `file.upload_duplicate` | file | The same name and content arrive again | |
+| `file.uploaded` | file | `upload_file` adds a new file | |
+| `file.version_added` | file | `add_file_version` adds a version to an existing file | |
+| `file.upload_duplicate` | file | The bytes equal what is already there (see section 7.2) | |
 | `file.ingest_started` | file | The background job starts on a file version | |
 | `file.extraction_completed` / `.extraction_failed` | file | A parser finishes | |
 | `file.indexed` | file | Chunks and embeddings are written | |
@@ -733,7 +734,7 @@ INSERT INTO agent_kinds VALUES ('translator','Reads files',1),('verifier','Check
 INSERT INTO note_kinds VALUES ('summary','What a file says',1),('finding','A fact found in a file',1),('interpretation','Subjective guidance or reasoning',0);
 INSERT INTO weights VALUES ('off',0,0.0),('low',1,0.5),('normal',2,1.0),('high',3,2.0);
 INSERT INTO file_types VALUES ('pdf','PDF'),('docx','Word'),('csv','CSV'),('md','Markdown'),('txt','Text'),('image','Image'),('other','Other');
-INSERT INTO location_kinds VALUES ('store','Bytes kept in the app''s data folder'),('path','A file on this machine, referred to by path'),('remote','A file on another server. Reserved, not used in version 1');
+INSERT INTO location_kinds VALUES ('store','A copy kept in the app''s data folder'),('path','A file read where it lies on this machine. Reserved, not used in version 1'),('remote','A file on another server. Reserved, not used in version 1');
 INSERT INTO availability_states VALUES ('ok',1),('missing',0),('changed',0);
 INSERT INTO extraction_kinds VALUES ('text','Text taken from the file'),('ocr','Text read from pixels'),('description','A model''s description of an image');
 INSERT INTO claim_kinds VALUES ('quoted','Stated by the cited passages'),('derived','Computed or inferred from other claims');
@@ -759,32 +760,31 @@ At first start, when no workspace exists, the server creates one named "My works
 - A citation row is only ever inserted by `citations.locate.create_citation`, which runs the mechanical check first (`05-retrieval-and-citations.md` section 6). There is no other insert path.
 - A new note gets a `note_versions` row (version 1) and a `note_weights` row with weight `normal`.
 
-### 7.2 Files: the app refers to files and does not own them
+### 7.2 Files: the app keeps a copy, and every version is kept
 
-A file row is a reference: a name, a content hash and a location. The user owns the bytes. The app never changes them and never removes them, in any location, for any reason.
+**The app has its own copy of every file.** `upload_file` and `add_file_version` receive bytes. They are streamed to a temporary file while the SHA-256 is computed, then moved to `files/<first two hex>/<sha256>` in the data folder. If that file already exists the temporary file is discarded. The copy is never changed and never removed, whatever is later deleted in the app. The user's own file on their disk is not known to the app and is not touched.
 
-**Two ways a file arrives**
+**If the user changes their own file**, the app's copy does not change. They bring the new content in themselves, in one of two ways:
 
-| Operation | `location_kind` | What happens to the bytes |
-|---|---|---|
-| `upload_file` (bytes sent by a browser or client) | `store` | Streamed to a temporary file while the SHA-256 is computed, then moved to `files/<first two hex>/<sha256>` in the data folder. If that file already exists the temporary file is discarded. A browser cannot give a path, so this is the only way an upload can be referred to later |
-| `reference_file` (an absolute path on the machine the server runs on) | `path` | Read in place to compute the SHA-256. Nothing is copied |
+| Operation | Use | Result | Event |
+|---|---|---|---|
+| `upload_file(ws, file)` | A new, separate file. The user may then delete the old one with `delete_file` | Insert `files`, `file_versions` version 1 and `file_availability` `ok`. Ingest it | `file.uploaded` |
+| `add_file_version(ws, file_id, file)` | The same file, changed over time. Its notes stay with it | Close the file's current version (`valid_to`), insert `file_versions` with `version` + 1 and `file_availability` `ok`. Ingest it | `file.version_added` |
 
-`remote` is reserved for files on other servers. A remote location will need the same three facts (name, hash, location) and the same check below.
+Nothing new is created, and the existing file is returned with event `file.upload_duplicate`, in two cases: `upload_file` when a live file in the workspace has the same name and its current version has the same hash; and `add_file_version` when the file's current version has the same hash. `upload_file` never adds a version on its own: two files may have the same name.
 
-The file's name is the original name: the uploaded file name, or the last part of the path. It cannot be changed.
+**Names.** Each version keeps the name it was uploaded with. The file is shown under the name of its current version. No operation renames a file.
 
-**Identity and versions.** After the hash is known:
+**Everything refers to a specific version.** A file (`files.id`) is the lasting thing. A version (`file_versions.id`) is one content.
 
-| Case | Result | Event |
-|---|---|---|
-| A live file in this workspace has the same name and the same hash | Nothing new. Return the existing file | `file.upload_duplicate` |
-| A live file in this workspace has the same name and a different hash | Close its current version, insert `file_versions` with `version` + 1 and a `file_availability` row `ok`, ingest it | `file.version_added` |
-| Otherwise | Insert `files`, `file_versions` version 1 and `file_availability` `ok`, ingest it | `file.uploaded` or `file.referenced` |
+- An extraction, its blocks and chunks belong to one version.
+- A note belongs to a file and records the version it was written about (`notes.file_version_id`). After a new version arrives, the file's notes are all still listed with it, each marked with its version number.
+- A citation records its version and its extraction. It is always checked against that extraction, so it stays true to the content it quoted, whatever versions come later.
+- An assignment, and therefore every agent's work, records the version the agent was given.
 
-The same content under a different name is a separate file.
+**What agents work on.** Only the current version of a file is searched and read. Agents are also given the file's notes from earlier versions, marked as such, because they are the context the file has built up. But evidence must come from the current version: a claim, a statement or a new note may only quote passages of the current version, and a citation into an earlier version cannot be reused (a validation rule in `04-agents.md` section 3). Stored answers and notes keep their old citations, which show their version.
 
-**The availability check.** `files/integrity.py::verify(conn, ctx, file_version_id) -> str` returns `ok`, `missing` or `changed`:
+**The availability check.** The app's copy could still be lost or damaged (a cleaned-up disk, a restored backup). `files/integrity.py::verify(conn, ctx, file_version_id) -> str` returns `ok`, `missing` or `changed`:
 
 1. If nothing exists at the location, or it is not a regular file: `missing`.
 2. If its size and modification time equal `size_bytes` and `mtime_ns`: `ok`, with no hashing.
@@ -792,13 +792,11 @@ The same content under a different name is a separate file.
 
 When the result differs from the current `file_availability` row, that row is closed, a new one is inserted, and `file.missing`, `file.changed` or `file.restored` is recorded.
 
-`verify` runs: when files are listed; at the start of every question, for every live file of the workspace; just before a file is given to a translator; before a direct chat or a first read; and before ingestion.
+`verify` runs on the current version of a file: when files are listed; at the start of every question, for every live file of the workspace; just before a file is given to a translator; before a direct chat or a first read; and before ingestion.
 
-**A file that is not `ok` is not worked on.** It is absent from `v_usable_files`, so it is not searched, not offered to the orchestrator and not assigned, and notes about it are not given to agents. It stays listed for the user with status `missing` or `changed`. Its notes, citations and past answers stay readable, because the extracted text they point into is in the database. If a question names such a file, or a file becomes unusable while a question runs, the stream carries a `status` event that says so, and the huddle continues without it.
+**A file that is not `ok` is not worked on.** It is absent from `v_usable_files`, so it is not searched, not offered to the orchestrator and not assigned, and notes about it are not given to agents. It stays listed for the user with status `missing` or `changed`. Its notes, citations and past answers stay readable, because the extracted text they point into is in the database. If a question names such a file, or a file becomes unusable while a question runs, the stream carries a `status` event that says so, and the huddle continues without it. The user repairs it by adding the content again with `add_file_version`.
 
-A `changed` file is never re-read on its own. The user adds it again, which makes a new version by the table above.
-
-Notes and citations keep pointing at the `file_version_id` they were written against, so they stay valid after a newer version arrives.
+**Later: files in their own places.** Version 1 always uses `location_kind = 'store'`. The design is ready for files that are read where they lie, on this machine (`path`) or on another server (`remote`), without a copy: a version already carries a location kind, a location and a hash; the availability check already detects a file that has gone or changed; and no code writes to file content. Adding such a kind later means one new operation and one reader per kind. Do not build either in version 1.
 
 ### 7.3 Delete, rename and edit
 

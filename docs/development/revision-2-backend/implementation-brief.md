@@ -20,7 +20,7 @@ A person adds files to a workspace and asks questions about them in a chat. Agen
 Three ideas run through the whole design. Keep them in mind in every task:
 
 1. **Nothing unverified is presented as fact.** A citation can only be created from a quote that is found, character for character, in the file's text.
-2. **Everything is recorded and nothing is removed.** Every action writes an event with who did it and through which door. Every delete is soft. The app refers to the user's files and never changes or removes their content.
+2. **Everything is recorded and nothing is removed.** Every action writes an event with who did it and through which door. Every delete is soft. The app keeps its own copy of every file and every version of it, and never changes or removes a copy.
 3. **One list of operations feeds both doors.** The HTTP API and the MCP server are generated from the same registry. You never write a route or an MCP tool by hand.
 
 ## Where things stand
@@ -46,7 +46,7 @@ Do not read them all at once. Each task lists the sections it needs under **Read
 |---|---|---|
 | `08-implementation-plan.md` | The ordered tasks B01 to B38 and F1 to F8, and the rules for doing them | Always. Its "How to use this plan" section first, then your task |
 | `01-architecture.md` | Components, technology, project layout, settings, concurrency, failure handling, security | A task names a section |
-| `02-data-model.md` | The full SQLite schema, the event log, versioning, file references, delete rules | A task names a section |
+| `02-data-model.md` | The full SQLite schema, the event log, versioning, file copies and versions, delete rules | A task names a section |
 | `03-contract.md` | Wire types, the operation list, the event stream, every change to `types.ts` | A task names a section |
 | `04-agents.md` | The `.agents` folder, turns, the state machine, the verifier, the runtime boundary | A task names a section |
 | `05-retrieval-and-citations.md` | Ingestion, parsing, chunking, search, citations and their mechanical check, note weights | A task names a section |
@@ -103,7 +103,8 @@ Use **Notes** for anything the next session must know: a name that differs from 
 - **Types everywhere.** Pydantic models for anything that crosses a boundary, type hints on every function, `pyright` strict with no ignores unless a comment says why.
 - **The backend never imports from `frontend/`.** The frontend talks only to the `Backend` interface in `frontend/src/backend/types.ts`.
 - **Never write a route or an MCP tool by hand.** Add an operation to `contract/operations.py` and both doors get it.
-- **Never open file content for writing, and never remove it.** This holds for uploaded files in the data folder and for files added by path.
+- **Never open stored file content for writing, and never remove it.** Every version of every file stays in the data folder.
+- **Everything refers to a specific file version.** Notes, citations, extractions and assignments carry a `file_version_id`. Never move one to a newer version.
 - **Every service function that changes something records its event in the same transaction.**
 - **Do not call a model.** All agent work goes through `runtime/`. In tests that is always `FakeRuntime`.
 - **Frontend changes are small.** Change only what a frontend task names. Do not restyle, rename or rearrange.

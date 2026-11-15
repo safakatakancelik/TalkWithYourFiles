@@ -4,10 +4,10 @@ Part of the revision 2 backend plan. This document defines ingestion, parsing, c
 
 ## 1. Ingestion
 
-`upload_file` and `reference_file` create the file rows and return at once with status `processing` (`02-data-model.md` section 7.2). They hand `files/ingest.py::ingest(conn_factory, ctx, settings, file_version_id)` to the background `Jobs` (`01-architecture.md` section 7):
+`upload_file` and `add_file_version` create the file rows and return at once with status `processing` (`02-data-model.md` section 7.2). They hand `files/ingest.py::ingest(conn_factory, ctx, settings, file_version_id)` to the background `Jobs` (`01-architecture.md` section 7):
 
 ```
-content at its location ─► availability check ─► parser ─► extraction + blocks ─► chunker ─► chunks + chunks_fts
+the app's copy ─► availability check ─► parser ─► extraction + blocks ─► chunker ─► chunks + chunks_fts
                                                                     ─► embedder, 64 chunks at a time ─► chunk_embeddings
 then: first_read turn, and describe_image for images (04-agents.md section 11)
 ```
@@ -151,7 +151,7 @@ A citation pins a quote to an exact place in an exact version of a file:
 
 | Field | Meaning |
 |---|---|
-| `file_id`, `file_version_id` | Which file, and which upload of it |
+| `file_id`, `file_version_id` | Which file, and which version of it. A citation never moves to a newer version |
 | `extraction_id` | Which text was read (parser and version, or OCR, or description) |
 | `char_start`, `char_end` | The quote's offsets in `extractions.text` |
 | `quote` | The exact characters at those offsets |
@@ -159,7 +159,7 @@ A citation pins a quote to an exact place in an exact version of a file:
 | `location` | The label of the block that contains the quote, for example `Page 3` or `Row 5` |
 | `found_by_agent_id`, `turn_id` | Who found it, in which turn |
 
-On the wire (`03-contract.md` section 2) these appear as `fileId`, `agentId`, `location`, `passage`, `quote`, and the optional `id`, `extractionId`, `start`, `end`, `page`.
+On the wire (`03-contract.md` section 2) these appear as `fileId`, `agentId`, `location`, `passage`, `quote`, and the optional `id`, `extractionId`, `start`, `end`, `page`, `fileName`, `fileVersion`.
 
 ### 6.2 Creating a citation
 
@@ -214,6 +214,7 @@ Weights come from the `weights` lookup: `off` 0, `low` 0.5, `normal` 1, `high` 2
 Three limits keep weights from weakening the citation rule:
 
 1. A note is never evidence. A claim can only stand on citations into files. An agent that wants to rely on a note's fact reuses that note's citations.
+4. Notes written about an earlier version of a file are still given to agents, with `earlier_version` true, and the `work-on-files` skill tells the agent that the file has changed since and that their facts must be found again in the current passages. Their citations cannot be reused (`02-data-model.md` section 7.2).
 2. Notes of kind `interpretation` are guidance. They can steer where an agent looks and how it reads, and nothing else.
 3. A weight change acts on later turns only. It is recorded per note (`note.weight_set`), and `note_weights` keeps every past value.
 

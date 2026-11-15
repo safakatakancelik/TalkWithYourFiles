@@ -4,7 +4,7 @@ Part of the revision 2 backend plan. Section 1 records what the owner decided du
 
 ## 1. Owner decisions made during planning
 
-These add to the numbered decisions in `planning-brief.md`, and change them where marked: O6 changes decision 10, O13 narrows decision 28, and O16 changes how decisions 2 and 7 are met.
+These add to the numbered decisions in `planning-brief.md`, and change them where marked: O6 changes decision 10 and O13 narrows decision 28.
 
 | # | Decision | Effect |
 |---|---|---|
@@ -23,7 +23,7 @@ These add to the numbered decisions in `planning-brief.md`, and change them wher
 | O13 | Reads are not recorded in the event log | D14 |
 | O14 | **No agent reads a whole file.** A file of thousands of pages must be reached through vectors, keywords and citations, a few passages at a time | The first read is one bounded turn; ingestion is local, in the background and in batches; every turn gets a fixed number of passages (`04-agents.md` section 11, `05-retrieval-and-citations.md` sections 1 and 5) |
 | O15 | The event log, a file's text and the replay of a question's events have no UI in version 1 | `03-contract.md` section 3 |
-| O16 | **The app refers to files and does not own them.** The user owns their files. The app never removes or changes file content, locally or anywhere. Files may later be referred to on remote servers. If a file is gone or its hash no longer matches, the app must know and must not go on working on it | Files by upload or by path, the availability check, statuses `missing` and `changed` (`02-data-model.md` section 7.2) |
+| O16 | **The app keeps its own copy of every file, and every version of a file is kept.** If the user changes their own file they upload it again, as a separate file (and may soft-delete the old one) or as a new version of the file already there. A file's notes stay with it across versions, and every note, citation and piece of agent work refers to the specific version it was made against. The app never changes or removes a copy. It must notice a copy that is gone or damaged and not work on it. Working on files that stay in their own places must be easy to add later | `upload_file`, `add_file_version`, the availability check, reserved location kinds (`02-data-model.md` section 7.2) |
 | O17 | Files keep their original names and cannot be renamed. Agents, notes and sessions can be renamed or edited. Everything is versioned and every delete is soft | `02-data-model.md` section 7.3; eight operations in `03-contract.md` section 3 |
 | O18 | The embedding model is English-centred now, and other models can be introduced later | `TWYF_EMBED_MODEL` and the re-embed job (`05-retrieval-and-citations.md` section 4) |
 
@@ -55,9 +55,11 @@ These add to the numbered decisions in `planning-brief.md`, and change them wher
 
 **D11. Definitions are snapshotted by content hash, and a child's hash includes its parent's and its skills'.** So one id on a turn pins the whole prompt. *Rejected:* versioning by file modification time (not content), and by git commit (the working tree may be uncommitted).
 
-**D12. Files are identified by SHA-256.** Same name and content: nothing new. Same name, new content: a new version. *Rejected:* always creating a new file (loses the link between versions).
+**D12. `upload_file` always makes a new file, and only `add_file_version` makes a version (O16).** A version is one content, identified by its SHA-256. *Rejected:* turning an upload with an existing name into a new version automatically. Two different documents can share a name, and the owner wants adding a version to be a deliberate act.
 
-**D12a. A file is a reference with a location (O16).** Two location kinds are built: `store` for bytes sent by a browser, which cannot give a path, and `path` for a file read in place. `remote` is reserved. Uploaded bytes are kept by the app because otherwise an uploaded file could not be referred to at all, and the app treats that copy like any other file of the user: it is never changed or removed. The availability check compares size and modification time first and hashes only when they differ, so checking thousands of large files at the start of a question stays cheap. Notes, citations and answers about a file that has gone stay readable, because the extracted text they point into is in the database; no agent works on such a file. *Rejected:* hashing every file on every use (too slow for large files), and re-reading a changed file automatically (the content the notes were written about would silently stop being the content in use).
+**D12a. Evidence comes from the current version only (O16).** A file's earlier notes are given to agents as context and marked as written about an earlier version, but a citation into an earlier version cannot be reused in a new statement, note or claim. Otherwise an answer could state as current something the file no longer says. Stored answers and notes keep their old citations, which stay checkable against the extraction of their own version.
+
+**D12c. Each version has a location kind, always `store` in version 1 (O16).** The kinds `path` and `remote` are reserved in the lookup table. Because a version already carries a location, a hash and an availability state, and no code writes to file content, reading files where they lie later needs one new operation and one reader, not a redesign. The availability check compares size and modification time first and hashes only when they differ, so it stays cheap for large files.
 
 **D12b. A note "rename" is an edit of its text, and only for notes the user wrote (O17).** Notes have no name, so the owner's "rename notes" is taken as editing. An agent's note cannot be edited because its text was checked against its citations; changing the words would break that link. It can be reweighted or deleted.
 
@@ -127,7 +129,7 @@ There are no open questions. Everything below is decided. The implementer must n
 | Erasing data | Soft delete only (D13) |
 | Renaming files (O17) | A file keeps its original name |
 | Editing an agent's note (D12b) | Reweight or delete it |
-| Files on remote servers (O16) | `store` and `path` locations. The `remote` code exists in the lookup table and nothing uses it |
+| Working on files in their own places, on this machine or a remote server (O16) | The app keeps a copy of every file. The `path` and `remote` codes exist in the lookup table and nothing uses them |
 | Graph retrieval | Hybrid keyword and vector search. The `entity_relations` table is created and never written |
 | Merging similar entities in the context map | Each distinct label is its own node |
 | A direct model API runtime | The `fake`, `queue` and `command` runtimes |
@@ -169,7 +171,7 @@ Versions seen installed together on Python 3.13 and 3.14: `mcp` 2.3.0, `pydantic
 | 4 Notes are the only link | `02-data-model.md` section 4.6 |
 | 5 Weights | `05-retrieval-and-citations.md` section 7; `note_weights` |
 | 6 Anyone can read earlier notes | `list_notes`; notes in every agent input |
-| 2 and 7, as changed by O16 | The app refers to files and never changes or removes their content. Extracted text, messages and notes with citations are kept in the database and never removed |
+| 2 and 7 Files stored as uploaded, never changed, the record kept | The app's copy of every version is never changed or removed (`02-data-model.md` section 7.2). Extracted text, messages and notes with citations are never removed |
 | 8 Parity | `06-mcp.md` section 2; `test_parity`. Three read operations have no UI by the owner's decision O15 |
 | 9 One local user, rows carry user and workspace | `users`, `workspace_id` on every table, `user_id` on every event |
 | 10 Translator output based on citations | Statements always. Notes as changed by O6 |
@@ -203,7 +205,7 @@ Versions seen installed together on Python 3.13 and 3.14: `mcp` 2.3.0, `pydantic
 | Recording approach, taxonomy, actor and source, identifiers | `02-data-model.md` sections 3 and 5 |
 | Versioning of agents, skills, prompts | `02-data-model.md` section 7.4 |
 | Slowly changing dimension per entity | `02-data-model.md` section 2 |
-| Raw file storage, duplicates, re-uploads, missing or changed files | `02-data-model.md` section 7.2 |
+| Raw file storage, duplicates, versions, missing or damaged copies | `02-data-model.md` section 7.2 |
 | Meaning of delete, rename and edit | `02-data-model.md` section 7.3 |
 | Migrations | `02-data-model.md` section 8 |
 | Parsing, chunking, embeddings, vectors | `05-retrieval-and-citations.md` sections 2 to 4 |

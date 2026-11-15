@@ -115,12 +115,12 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Done when:** `uv run pytest tests/unit/services/test_workspaces.py tests/unit/services/test_agents.py tests/unit/db/repos`.
 - **Depends on:** B09.
 
-### B11 File references: upload, reference by path, availability
-- **Goal:** files are referred to, versioned and checked. Parsing comes in B13.
-- **Read:** `02-data-model.md` sections 4.3, 7.2 and 7.3 (row `delete_file`). `01-architecture.md` section 9 ("Uploads", "References by path"). `05-retrieval-and-citations.md` section 1 (file types). `09-decisions.md` O16.
-- **Files:** `files/store.py`, `files/types.py`, `files/integrity.py`, `files/jobs.py`, `db/repos/files.py`, `services/files.py` (`upload`, `reference`, `list`, `delete`), tests, and the `jobs` fixture.
-- **Signatures:** `store.save(data_dir: Path, stream: BinaryIO, max_bytes: int) -> tuple[str, int, Path]` (sha256, size, path under `files/`; raises `ServiceError("too_large")`; never overwrites an existing file); `integrity.sha256_of(path: Path) -> str`; `integrity.verify(conn, ctx, file_version_id: str) -> str`; `integrity.verify_workspace(conn, ctx, workspace_id: str) -> list[tuple[str, str]]` (file id and state for every file that is not `ok`); `types.file_type(name: str) -> FileType`; `class Jobs(Protocol): submit(fn: Callable[[], None]) -> None; join() -> None`, with `InlineJobs` and `ThreadJobs`; `files.upload(ctx, input: UploadFileInput, *, name: str, stream: BinaryIO, file_id: str | None = None) -> FileItem`; `files.reference(ctx, input: ReferenceFileInput, *, file_id: str | None = None) -> FileItem`; `files.list(ctx, input) -> list[FileItem]` (runs `verify_workspace` first); `files.delete(ctx, DeleteFileInput) -> None`. `upload` and `reference` submit `files.ingest.ingest` to `Jobs` when that module exists; until B13 the status stays `processing`. No function in the backend opens file content for writing, and none removes it.
-- **Tests:** `test_store_named_by_hash`, `test_store_rejects_oversize`, `test_upload_cases`, `test_reference_file`, `test_content_never_written`, the five `test_verify_*` tests, `test_jobs`, `test_file_type_from_extension`, repository tests for files.
+### B11 Files: upload, versions, availability
+- **Goal:** files are copied in, versioned and checked. Parsing comes in B13.
+- **Read:** `02-data-model.md` sections 4.3, 7.2 and 7.3 (row `delete_file`). `01-architecture.md` section 9 ("Uploads"). `05-retrieval-and-citations.md` section 1 (file types). `09-decisions.md` O16.
+- **Files:** `files/store.py`, `files/types.py`, `files/integrity.py`, `files/jobs.py`, `db/repos/files.py`, `services/files.py` (`upload`, `add_version`, `list`, `delete`), tests, and the `jobs` fixture.
+- **Signatures:** `store.save(data_dir: Path, stream: BinaryIO, max_bytes: int) -> tuple[str, int, Path]` (sha256, size, path under `files/`; raises `ServiceError("too_large")`; never overwrites an existing file); `integrity.sha256_of(path: Path) -> str`; `integrity.verify(conn, ctx, file_version_id: str) -> str`; `integrity.verify_workspace(conn, ctx, workspace_id: str) -> list[tuple[str, str]]` (file id and state for every file that is not `ok`); `types.file_type(name: str) -> FileType`; `class Jobs(Protocol): submit(fn: Callable[[], None]) -> None; join() -> None`, with `InlineJobs` and `ThreadJobs`; `files.upload(ctx, input: UploadFileInput, *, name: str, stream: BinaryIO, file_id: str | None = None) -> FileItem`; `files.add_version(ctx, input: AddFileVersionInput, *, name: str, stream: BinaryIO) -> FileItem`; `files.list(ctx, input) -> list[FileItem]` (runs `verify_workspace` first); `files.delete(ctx, DeleteFileInput) -> None`. `upload` and `add_version` submit `files.ingest.ingest` to `Jobs` when that module exists; until B13 the status stays `processing`. `location_kind` is always `store`. No function in the backend opens file content for writing, and none removes it.
+- **Tests:** `test_store_named_by_hash`, `test_store_rejects_oversize`, `test_upload_cases`, `test_add_file_version`, `test_content_never_written`, the five `test_verify_*` tests, `test_jobs`, `test_file_type_from_extension`, repository tests for files.
 - **Done when:** `uv run pytest tests/unit/files tests/unit/services/test_files.py`.
 - **Depends on:** B10.
 
@@ -138,7 +138,7 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Read:** `05-retrieval-and-citations.md` sections 1, 2 ("Canonical text") and 3. `02-data-model.md` section 4.3.
 - **Files:** `files/chunker.py`, `files/ingest.py`, `db/repos/extractions.py`, tests. `services/files.py` gains `get_text` and the real `status`.
 - **Signatures:** `chunk(blocks: list[BlockSpan]) -> list[ChunkSpan]` (`BlockSpan(char_start, char_end, text)`, `ChunkSpan(char_start, char_end, text)`); `build_extraction(doc: ParsedDocument) -> tuple[str, list[BlockRow]]`; `ingest(conn_factory, ctx, settings, file_version_id: str) -> None` (run `integrity.verify` and stop if the file is not `ok`; record `file.ingest_started`; parse; store extraction and blocks; chunk; fill `chunks` and `chunks_fts`; record the events; embedding is added in B14); `pending_ingestion(conn) -> list[str]` (live file versions with no extraction); `files.get_text(ctx, GetFileTextInput) -> FileText`.
-- **Tests:** `test_canonical_text_offsets`, `test_parse_failure_marks_unreadable`, `test_chunker_rules`, `test_unusable_file_hidden_from_agents` (the search part is added in B15).
+- **Tests:** `test_canonical_text_offsets`, `test_parse_failure_marks_unreadable`, `test_chunker_rules`, `test_unusable_file_hidden_from_agents` (the search part is added in B15), `test_everything_points_at_its_version` (the note and citation parts are added in B17, the assignment part in B26).
 - **Done when:** `uv run pytest tests/unit/files`.
 - **Depends on:** B11, B12.
 
@@ -201,7 +201,7 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Read:** `03-contract.md` section 3 (binding rule, errors, headers). `01-architecture.md` sections 5, 7, 9.
 - **Files:** `http/app.py`, `http/errors.py`, `http/context.py`, `cli.py` (subcommand `serve`), tests under `tests/integration/`, and the `app` and `client` fixtures.
 - **Signatures:** `build_app(settings: Settings, runtime: AgentRuntime | None = None, jobs: Jobs | None = None) -> FastAPI` (`jobs` defaults to `ThreadJobs`; a lifespan that migrates, syncs definitions and config, creates the first workspace when none exists, records `server.started`, submits `ingest` for every result of `pending_ingestion`, and submits `reembed` when the configured embedding model has no row yet; one `app.add_api_route("/api/v1" + op.path, endpoint, methods=[op.method], name=op.name)` per `json` and `upload` operation; `GET /api/v1/health`; CORS; optional static files); `context_from_request(request) -> RequestContext`; an exception handler mapping `ServiceError` and validation errors to `ErrorBody`. Each generated endpoint builds the input model by the binding rule and calls the handler with `run_in_threadpool`.
-- **Tests:** `test_every_operation_has_a_route` (stream operations may answer `internal` until B28), `test_workspace_lifecycle`, `test_upload_and_list`, `test_upload_too_large`, `test_upload_traversal_name`, `test_agents_and_notes`, `test_error_shapes`, `test_source_and_client_headers`, `test_list_events_filters`, `test_static_dir`, `test_upload_returns_before_ingestion`, `test_ingestion_resumed_at_start`, `test_reference_file_api`, `test_renames_and_edits`, `test_soft_deletes`.
+- **Tests:** `test_every_operation_has_a_route` (stream operations may answer `internal` until B28), `test_workspace_lifecycle`, `test_upload_and_list`, `test_upload_too_large`, `test_upload_traversal_name`, `test_agents_and_notes`, `test_error_shapes`, `test_source_and_client_headers`, `test_list_events_filters`, `test_static_dir`, `test_upload_returns_before_ingestion`, `test_ingestion_resumed_at_start`, `test_add_file_version_api`, `test_renames_and_edits`, `test_soft_deletes`.
 - **Done when:** `uv run pytest tests/integration` and `uv run twyf serve` answers `curl localhost:8321/api/v1/health`.
 - **Depends on:** B17, B18, B19.
 
@@ -289,7 +289,7 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Goal:** every row of the failure table behaves as written.
 - **Read:** `01-architecture.md` sections 7 and 8. `04-agents.md` section 5.4 (last paragraph) and 9.3 (last paragraph).
 - **Files:** `orchestration/engine.py` and whatever the tests expose, tests.
-- **Tests:** `test_ask_bad_quote_retried`, `test_ask_translator_fails_others_continue`, `test_ask_verifier_unavailable`, `test_concurrent_questions`, `test_weights_reach_agents`, `test_injection_is_inert`, `test_missing_file_left_out_of_question`, `test_file_lost_during_question`, `test_all_files_unusable`.
+- **Tests:** `test_ask_bad_quote_retried`, `test_ask_translator_fails_others_continue`, `test_ask_verifier_unavailable`, `test_concurrent_questions`, `test_weights_reach_agents`, `test_injection_is_inert`, `test_missing_file_left_out_of_question`, `test_file_lost_during_question`, `test_all_files_unusable`, `test_versions_and_agents`.
 - **Done when:** `uv run pytest tests/integration`.
 - **Depends on:** B28.
 
@@ -392,7 +392,7 @@ Run from `frontend/`. Each is done when `npm run build && npm test` passes. Read
 
 ### F2 Mock additions
 - **Goal:** the mock implements the larger interface.
-- **Files:** `src/backend/mock.ts`: `createWorkspace`, `renameWorkspace`, `deleteWorkspace` on an in-memory list that starts with `mine` and the demo workspace (the demo workspace cannot be renamed or deleted); `referenceFile` (adds a file named after the last part of the path, with `path` set); `deleteFile`, `renameAgent`, `deleteAgent`, `editNote` (user notes only), `deleteNote`, `renameSession`, `deleteSession`, each changing the in-memory data; a `started` event first in `genericScript`.
+- **Files:** `src/backend/mock.ts`: `createWorkspace`, `renameWorkspace`, `deleteWorkspace` on an in-memory list that starts with `mine` and the demo workspace (the demo workspace cannot be renamed or deleted); `addFileVersion` (the file keeps its id and takes the new name and size, and its `version` goes up by one; its notes stay); `deleteFile`, `renameAgent`, `deleteAgent`, `editNote` (user notes only), `deleteNote`, `renameSession`, `deleteSession`, each changing the in-memory data; a `started` event first in `genericScript`.
 - **Done when:** `npm run build && npm test`.
 - **Depends on:** F1.
 
@@ -418,10 +418,10 @@ Run from `frontend/`. Each is done when `npm run build && npm test` passes. Read
 - **Done when:** `npm run build && npm test`, and the demo plays in the browser as before for every existing event.
 - **Depends on:** F4.
 
-### F6 Files by path, statuses, renames and deletes
+### F6 File versions, statuses, renames and deletes
 - **Goal:** the UI offers every new operation, with the smallest possible controls.
 - **Read:** `03-contract.md` section 7 (rows Files, Renames and deletes). `02-data-model.md` section 7.3. `src/Panels.tsx`.
-- **Files:** `src/App.tsx` (handlers that call the new `Backend` methods and refresh the lists; a 2-second refresh of the file list while any file has status `processing`; `nameOf` falls back to a note's `authorName`, `fileName` to a citation's `fileName`), `src/Panels.tsx` (explorer: the path field and a status badge; file card: Delete; agent card: Rename and Delete; session rows: Rename and Delete; each note: Delete, and Edit when its author is `user`), `src/styles.css` (status badges).
+- **Files:** `src/App.tsx` (handlers that call the new `Backend` methods and refresh the lists; a 2-second refresh of the file list while any file has status `processing`; `nameOf` falls back to a note's `authorName`, `fileName` to a citation's `fileName`), `src/Panels.tsx` (explorer: a status badge; file card: "Add new version", the version number, Delete, and "version N" on notes about an earlier version; agent card: Rename and Delete; session rows: Rename and Delete; each note: Delete, and Edit when its author is `user`), `src/styles.css` (status badges).
 - **Rules:** use the browser's `prompt` and `confirm`. No file rename control anywhere. A file whose status is `missing` or `changed` is shown dimmed with that word.
 - **Done when:** `npm run build && npm test`.
 - **Depends on:** F5.

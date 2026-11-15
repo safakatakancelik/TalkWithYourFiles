@@ -45,11 +45,11 @@ If the SDK does not accept a built signature, register the tools through the SDK
 
 A failed request raises an MCP tool error whose message is `<code>: <message>` from the API's `ErrorBody`.
 
-### Three tools that differ from a plain request
+### Four tools that differ from a plain request
 
 | Tool | Difference |
 |---|---|
-| `upload_file` | Input is `ws` plus either `path` (a file on the machine where the MCP server runs) or `name` and `content_base64`. The MCP server reads the bytes and sends the multipart upload, so the app keeps its own copy. `path` must be a regular file and within the size limit. To add a file without copying it, a client uses the plain tool `reference_file(ws, path)` instead, where `path` is on the machine the API server runs on |
+| `upload_file`, `add_file_version` | Input is `ws` (and `file_id` for a version) plus either `path` (a file on the machine where the MCP server runs) or `name` and `content_base64`. The MCP server reads the bytes and sends the multipart upload, and the app keeps its own copy. `path` must be a regular file and within the size limit |
 | `ask` | Extra input `wait: bool = True`. With `wait` true the tool reads the event stream to its end, reports each event as progress (`ctx.report_progress`, message = a one-line description of the event), and returns `{question_id, outcome: "answer" \| "error" \| "cancelled", answer?: {text, citations, unverified}, error?, events}`. With `wait` false it returns `{question_id}` as soon as the `started` event arrives |
 | `get_question_events` | Sends `Accept: application/json`, for which the API returns `{events: [...], last_id, done: bool}` at once instead of a stream. Called repeatedly with `after = last_id` to follow a question |
 
@@ -98,5 +98,5 @@ The backend stays in charge throughout: it decides which turn exists, validates 
 ## 6. Safety notes for the owner
 
 - Run the worker harness with file, shell and network tools switched off or set to ask. Its job needs none of them, and this removes what an instruction hidden in an uploaded file could reach.
-- The MCP server's `upload_file(path=...)` reads files with the rights of the user who started it. It is meant for a local, single-user setup.
+- The MCP server's `upload_file(path=...)` and `add_file_version(path=...)` read files with the rights of the user who started it. It is meant for a local, single-user setup.
 - The Streamable HTTP mode binds to `127.0.0.1` and has no sign-in. Do not expose it.

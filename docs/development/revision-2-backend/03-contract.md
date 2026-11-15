@@ -59,10 +59,10 @@ Python models in `contract/models.py`. Each has the same name and fields as the 
 | Model | Fields |
 |---|---|
 | `Workspace` | `id`, `name` |
-| `FileItem` | `id`, `name`, `type: FileType`, `size_kb: int`, `uploaded_at`, `status?: 'processing' \| 'ready' \| 'unreadable' \| 'missing' \| 'changed'`, `version?: int`, `path?: str` (set for a file added by path) |
+| `FileItem` | `id`, `name`, `type: FileType`, `size_kb: int`, `uploaded_at`, `status?: 'processing' \| 'ready' \| 'unreadable' \| 'missing' \| 'changed'`, `version?: int` |
 | `Agent` | `id`, `name`, `specialty` |
-| `Citation` | `n: int`, `file_id`, `agent_id`, `location`, `passage`, `quote`, `id?`, `extraction_id?`, `start?: int`, `end?: int`, `page?: int`, `file_name?` |
-| `Note` | `id`, `file_id`, `author_id`, `kind: 'summary' \| 'interpretation' \| 'finding'`, `text`, `citations: list[Citation]`, `created_at`, `weight: Weight`, `author_name?` |
+| `Citation` | `n: int`, `file_id`, `agent_id`, `location`, `passage`, `quote`, `id?`, `extraction_id?`, `start?: int`, `end?: int`, `page?: int`, `file_name?`, `file_version?: int` |
+| `Note` | `id`, `file_id`, `author_id`, `kind: 'summary' \| 'interpretation' \| 'finding'`, `text`, `citations: list[Citation]`, `created_at`, `weight: Weight`, `author_name?`, `file_version?: int` |
 | `Session` | `id`, `title`, `updated_at`, `message_count: int` |
 | `Unverified` | `text`, `reason` |
 | `ChatMsg` | `id`, `role: 'user' \| 'assistant'`, `text`, `citations?`, `pending?`, `status?`, `placeholder?`, `unverified?: list[Unverified]`, `error?: str` |
@@ -82,6 +82,7 @@ Mapping rules between the database and the wire:
 - `FileItem.size_kb = max(1, round(size_bytes / 1024))`. `uploaded_at` is the creation time of the current file version.
 - `FileItem.status`: `missing` or `changed` when the availability check says so (`02-data-model.md` section 7.2). Otherwise `processing` until ingestion ends, then `ready`, or `unreadable` when no extraction succeeded.
 - The real backend always fills `Note.author_name` and `Citation.file_name`, so a note by a deleted agent and a citation into a deleted file can still be shown.
+- The real backend always fills `Note.file_version` and `Citation.file_version` with the version number the note or citation was made against, and `FileItem.version` with the current version number. `FileItem.name`, `size_kb` and `uploaded_at` describe the current version. `list_notes` returns a file's notes from all of its versions.
 - `Citation.n` is unique within the list that carries it. Inside a question every distinct citation gets a number in order of creation, and `say`, `note` and `verify` events use that number. The `answer` event and stored messages renumber from 1 in order of first appearance in the text. Notes written outside a question number from 1.
 - `Citation.passage` always contains `Citation.quote`.
 
@@ -112,7 +113,7 @@ Binding rule: an input field whose name appears in `path` comes from the path. F
 | `delete_workspace` | DELETE `/workspaces/{ws}` | | none | `deleteWorkspace` |
 | `list_files` | GET `/workspaces/{ws}/files` | | `list[FileItem]` | `listFiles` |
 | `upload_file` | POST `/workspaces/{ws}/files` (upload) | the file part | `FileItem` | `uploadFile` |
-| `reference_file` | POST `/workspaces/{ws}/files/reference` | `path` | `FileItem` | `referenceFile` |
+| `add_file_version` | POST `/workspaces/{ws}/files/{file_id}/versions` (upload) | the file part | `FileItem` | `addFileVersion` |
 | `delete_file` | DELETE `/workspaces/{ws}/files/{file_id}` | | none | `deleteFile` |
 | `get_file_text` | GET `/workspaces/{ws}/files/{file_id}/text` | `start?`, `end?` | `{text, start, end, total}` | |
 | `list_agents` | GET `/workspaces/{ws}/agents` | | `list[Agent]` | `listAgents` |
@@ -145,7 +146,7 @@ Binding rule: an input field whose name appears in `path` comes from the path. F
 
 `list_events`, `get_file_text` and `get_question_events` are in the API and MCP only. The owner decided that version 1 has no UI for them (`09-decisions.md` O15). Do not build one.
 
-The rules for `reference_file` and for every rename, edit and delete are in `02-data-model.md` sections 7.2 and 7.3. `upload_file` and `reference_file` return at once with status `processing`.
+The rules for file versions and for every rename, edit and delete are in `02-data-model.md` sections 7.2 and 7.3. `upload_file` and `add_file_version` return at once with status `processing`.
 
 ### Errors
 
@@ -156,7 +157,7 @@ Every failed request returns `ErrorBody` with one of these codes:
 | 400 | `validation` | The input does not match the model, or a rule in `02-data-model.md` section 7 is broken |
 | 404 | `not_found` | Unknown or deleted workspace, file, agent, session, question or turn. Also an id from another workspace |
 | 409 | `conflict` | The session already has a running question. A turn lease is stale. An agent in a running huddle, or a session with a running question, is being deleted |
-| 413 | `too_large` | Upload above `TWYF_MAX_UPLOAD_MB`, or a referenced file above `TWYF_MAX_FILE_MB` |
+| 413 | `too_large` | Upload above `TWYF_MAX_UPLOAD_MB` |
 | 500 | `internal` | Anything else. The message is generic. Details go to the log |
 
 Services raise `twyf.services.errors.ServiceError(code, message, details)`. `http/errors.py` maps it. The MCP server passes the code and message through as a tool error.
@@ -232,13 +233,12 @@ All are additions. No existing field, type or method is removed or changed in me
 // 1. FileType gains 'image'.
 export type FileType = 'pdf' | 'docx' | 'csv' | 'md' | 'txt' | 'image' | 'other';
 
-// 2. FileItem gains three optional fields.
+// 2. FileItem gains two optional fields.
   status?: 'processing' | 'ready' | 'unreadable' | 'missing' | 'changed';
+  /** The number of the file's current version, from 1. */
   version?: number;
-  /** Set when the file was added by its path and is read in place. */
-  path?: string;
 
-// 3. Citation gains six optional fields.
+// 3. Citation gains seven optional fields.
   id?: string;
   extractionId?: string;
   /** Character offsets of the quote in the file's extracted text. */
@@ -246,9 +246,13 @@ export type FileType = 'pdf' | 'docx' | 'csv' | 'md' | 'txt' | 'image' | 'other'
   end?: number;
   page?: number;
   fileName?: string;
+  /** The version of the file this passage was quoted from. */
+  fileVersion?: number;
 
-// 3b. Note gains one optional field.
+// 3b. Note gains two optional fields.
   authorName?: string;
+  /** The version of the file this note was written about. */
+  fileVersion?: number;
 
 // 4. New types.
 export interface Unverified { text: string; reason: string }
@@ -288,8 +292,8 @@ export const VERIFIER = 'verifier';
   renameWorkspace(ws: string, name: string): Promise<Workspace>;
   deleteWorkspace(ws: string): Promise<void>;
   uploadFile(ws: string, file: { name: string; size: number; data?: Blob }): Promise<void>;
-  /** Adds a file by its path on the backend's machine. Nothing is copied. */
-  referenceFile(ws: string, path: string): Promise<void>;
+  /** Adds new content to an existing file as its next version. Notes stay with the file. */
+  addFileVersion(ws: string, fileId: string, file: { name: string; size: number; data?: Blob }): Promise<void>;
   deleteFile(ws: string, fileId: string): Promise<void>;
   renameAgent(ws: string, agentId: string, name: string): Promise<void>;
   deleteAgent(ws: string, agentId: string): Promise<void>;
@@ -312,7 +316,7 @@ Kept minimal. The tasks are F1 to F8 in `08-implementation-plan.md`. Summary:
 |---|---|
 | Types | Apply section 6. Add `contract.gen.ts`, `contract.check.ts` and the script `gen:contract` |
 | Mock | Implement the eleven new methods in memory |
-| Files | In the explorer: a text field "Add a file by its path" beside the upload button; a status badge for any status other than `ready`; a Delete button on the file card. While any file is `processing`, the file list is fetched again every 2 seconds |
+| Files | On the file card: an "Add new version" button that opens a file picker and calls `addFileVersion`, the current version number, and a Delete button. Each note on the file card whose `fileVersion` is below the file's current `version` is marked "version N". In the explorer: a status badge for any status other than `ready`. While any file is `processing`, the file list is fetched again every 2 seconds |
 | Renames and deletes | Rename and Delete buttons on the agent card and on each session row; Delete on each note; Edit on a note the user wrote. All use the browser's `prompt` and `confirm`. A note's author is shown from `authorName` when the agent is no longer in the list, and a citation's file from `fileName` |
 | HTTP backend | New `frontend/src/backend/http.ts`: `httpBackend(baseUrl): Backend`. Sends `X-TWYF-Source: ui`. `ask` reads the POST response as server-sent events with `fetch` and a stream reader, yields each event, and calls `cancel_question` when the signal aborts |
 | Choosing | `frontend/src/backend/index.ts` reads `import.meta.env.VITE_BACKEND_URL`. Unset: the mock, as today. Set: `withDemo(httpBackend(url), mockBackend)` from new `router.ts`, which sends every call for workspace id `demo` to the mock and adds the demo workspace to `listWorkspaces`. "Run demo" therefore always plays the mock |

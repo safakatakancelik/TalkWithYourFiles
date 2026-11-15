@@ -104,6 +104,7 @@ Shared pieces:
 class PassageIn(Wire):   passage_id: str; file_id: str; file_name: str; location: str; text: str
 class CitationIn(Wire):  citation_id: str; n: int; file_name: str; location: str; passage: str; quote: str
 class NoteIn(Wire):      note_id: str; file_name: str; author: str; kind: str; weight: str; text: str
+                         file_version: int; earlier_version: bool   # true when written about a version that is no longer current
 class Quote(Wire):       passage_id: Opt[str] = None; quote: Opt[str] = None; citation_id: Opt[str] = None
                          # either passage_id + quote (a new citation) or citation_id (reuse one already made)
 class StatementOut(Wire): text: str; quotes: list[Quote]          # at least one quote
@@ -137,7 +138,7 @@ Claim and verdict shapes are in sections 8 and 9.
 | all | Every `agent_id`, `file_id`, `passage_id`, `citation_id` and `claim_id` in the output was present in the input |
 | `plan` | `broadcast_to` and `direct_calls` name translators only. Every agent in `named_agent_ids` is in one of them |
 | `assign` | Each assigned agent is a volunteer, a direct call, or becomes a called agent. Every file in `named_file_ids` is assigned to someone |
-| `work`, `direct_reply`, `first_read` | Every statement has at least one quote. Every quote passes the mechanical check (`05-retrieval-and-citations.md` section 6). A `summary` or `finding` note has at least one quote and all its quotes are from its own file. `searches` is empty when `searches_left` is 0 |
+| `work`, `direct_reply`, `first_read` | Every statement has at least one quote. Every quote passes the mechanical check (`05-retrieval-and-citations.md` section 6). A reused citation (`Quote.citation_id`) points into the current version of its file. A `summary` or `finding` note has at least one quote and all its quotes are from its own file. `searches` is empty when `searches_left` is 0 |
 | `review` | `followups` is empty when `decision` is `settle` or `steps_left` is 0. A follow-up to an agent outside the huddle has `file_ids` |
 | `draft_claims` | Section 8 |
 | `verify` | Exactly one verdict per input claim. Each verdict has one entry per citation of that claim |
@@ -381,7 +382,7 @@ class ClaimOut(Wire):
 
 Rules checked by `orchestration/claims.py` after `draft_claims`:
 
-1. A `quoted` claim has at least one citation id, and each was created in this question.
+1. A `quoted` claim has at least one citation id, and each was created or reused in this question and points into the current version of its file.
 2. A `derived` claim has at least one `derived_from`, every ref exists, and there is no cycle. Its citations are computed by the backend as the union of its inputs' citations. So a derived claim is always cited, through the claims it stands on.
 3. When `expression` is present it is evaluated by `orchestration/arithmetic.py` using `simpleeval` with numbers, `+ - * / **`, parentheses and the functions `round`, `abs`, `min`, `max` only. No names. `computed_result` is stored. The claim passes this check when `abs(computed - stated) <= 0.005 * max(1, abs(stated))`.
 4. A claim that is identical to one already verified in this question (same `content_sha256`) keeps its verdict and is not sent to the verifier again. The carried verdict is stored with `carried_from`. The `verify` event lists every claim of the round and the `verdict` event gives a verdict for every one of them, carried or new.
