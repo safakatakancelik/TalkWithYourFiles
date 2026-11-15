@@ -45,7 +45,7 @@ class EventBroker:
         self._lock = threading.Lock()
         self._subscribers: dict[str, list[Subscription]] = {}
 
-    def subscribe(self, question_id: str) -> AsyncIterator[tuple[int, AgentEvent]]:
+    def subscribe(self, question_id: str) -> Subscription:
         subscription = Subscription(self, question_id)
         with self._lock:
             self._subscribers.setdefault(question_id, []).append(subscription)

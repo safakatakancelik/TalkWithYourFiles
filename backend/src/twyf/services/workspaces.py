@@ -77,6 +77,14 @@ def rename(ctx: RequestContext, input: RenameWorkspaceInput) -> Workspace:
 
 
 def delete(ctx: RequestContext, input: DeleteWorkspaceInput) -> None:
+    """Running questions in it are cancelled first. All its rows remain."""
+    with state.db() as conn:
+        require(conn, input.ws)
+        running = conn.execute(
+            "SELECT id FROM questions WHERE workspace_id = ? AND finished_at IS NULL", (input.ws,)
+        ).fetchall()
+    for row in running:
+        state.cancel_question(row["id"], ctx)
     with state.db() as conn, transaction(conn):
         require(conn, input.ws)
         repo.soft_delete(conn, input.ws)

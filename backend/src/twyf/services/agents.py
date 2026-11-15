@@ -11,6 +11,7 @@ from twyf.contract.operations import (
 )
 from twyf.db.connection import transaction
 from twyf.db.repos import agents as repo
+from twyf.db.repos import huddle
 from twyf.db.repos.agents import AgentRow
 from twyf.ids import new_id
 from twyf.recording.context import RequestContext
@@ -34,6 +35,8 @@ def _translator(conn: sqlite3.Connection, ws_id: str, agent_id: str) -> AgentRow
         raise ServiceError("not_found", "No such agent", {"agent_id": agent_id})
     if agent.agent_kind != "translator":
         raise ServiceError("validation", f"The {agent.agent_kind} cannot be changed", {"agent_id": agent_id})
+    if huddle.running_members(conn, agent_id):
+        raise ServiceError("conflict", "The agent is in a running huddle", {"agent_id": agent_id})
     return agent
 
 

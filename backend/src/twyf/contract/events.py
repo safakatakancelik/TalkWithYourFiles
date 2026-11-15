@@ -160,3 +160,11 @@ agent_event_adapter: TypeAdapter[AgentEvent] = TypeAdapter(AgentEvent)
 
 def parse_event(data: dict[str, Any]) -> AgentEvent:
     return agent_event_adapter.validate_python(data)
+
+
+class QuestionEvents(Wire):
+    """`get_question_events` with `Accept: application/json`: the stored events at once (03-contract.md 4.2)."""
+
+    events: list[AgentEvent]
+    last_id: int
+    done: bool

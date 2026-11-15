@@ -1303,6 +1303,104 @@
       "title": "NoteEvent",
       "type": "object"
     },
+    "QuestionEvents": {
+      "additionalProperties": false,
+      "description": "`get_question_events` with `Accept: application/json`: the stored events at once (03-contract.md 4.2).",
+      "properties": {
+        "done": {
+          "title": "Done",
+          "type": "boolean"
+        },
+        "events": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "answer": "#/$defs/AnswerEvent",
+                "assign": "#/$defs/AssignEvent",
+                "broadcast": "#/$defs/BroadcastEvent",
+                "cancelled": "#/$defs/CancelledEvent",
+                "context": "#/$defs/ContextEvent",
+                "error": "#/$defs/ErrorEvent",
+                "join": "#/$defs/JoinEvent",
+                "leave": "#/$defs/LeaveEvent",
+                "note": "#/$defs/NoteEvent",
+                "reading": "#/$defs/ReadingEvent",
+                "rehuddle": "#/$defs/RehuddleEvent",
+                "say": "#/$defs/SayEvent",
+                "started": "#/$defs/StartedEvent",
+                "status": "#/$defs/StatusEvent",
+                "verdict": "#/$defs/VerdictEvent",
+                "verify": "#/$defs/VerifyEvent"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/StartedEvent"
+              },
+              {
+                "$ref": "#/$defs/StatusEvent"
+              },
+              {
+                "$ref": "#/$defs/BroadcastEvent"
+              },
+              {
+                "$ref": "#/$defs/JoinEvent"
+              },
+              {
+                "$ref": "#/$defs/AssignEvent"
+              },
+              {
+                "$ref": "#/$defs/ReadingEvent"
+              },
+              {
+                "$ref": "#/$defs/NoteEvent"
+              },
+              {
+                "$ref": "#/$defs/SayEvent"
+              },
+              {
+                "$ref": "#/$defs/VerifyEvent"
+              },
+              {
+                "$ref": "#/$defs/VerdictEvent"
+              },
+              {
+                "$ref": "#/$defs/RehuddleEvent"
+              },
+              {
+                "$ref": "#/$defs/LeaveEvent"
+              },
+              {
+                "$ref": "#/$defs/ContextEvent"
+              },
+              {
+                "$ref": "#/$defs/AnswerEvent"
+              },
+              {
+                "$ref": "#/$defs/ErrorEvent"
+              },
+              {
+                "$ref": "#/$defs/CancelledEvent"
+              }
+            ]
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "lastId": {
+          "title": "Lastid",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "events",
+        "lastId",
+        "done"
+      ],
+      "title": "QuestionEvents",
+      "type": "object"
+    },
     "ReadingEvent": {
       "additionalProperties": false,
       "properties": {

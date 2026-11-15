@@ -7,10 +7,16 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from twyf.config import Settings
 from twyf.db.connection import connect as _connect
 from twyf.files.jobs import InlineJobs, Jobs
+
+if TYPE_CHECKING:  # both import this module
+    from twyf.orchestration.engine import Engine
+    from twyf.recording.context import RequestContext
+    from twyf.services.questions import Tasks
 
 _settings: Settings | None = None
 _jobs: Jobs = InlineJobs()
@@ -50,3 +56,33 @@ def db() -> Generator[sqlite3.Connection]:
         yield conn
     finally:
         conn.close()
+
+
+_engine: "Engine | None" = None
+_tasks: "Tasks | None" = None
+
+
+def configure_questions(engine: "Engine", tasks: "Tasks") -> None:
+    """The running app's engine and its task registry."""
+    global _engine, _tasks
+    _engine, _tasks = engine, tasks
+
+
+def engine() -> "Engine":
+    if _engine is None:
+        raise RuntimeError("no engine: the questions part of the app is not configured")
+    return _engine
+
+
+def tasks() -> "Tasks":
+    if _tasks is None:
+        raise RuntimeError("no task registry: the questions part of the app is not configured")
+    return _tasks
+
+
+def cancel_question(question_id: str, ctx: "RequestContext") -> None:
+    """Asks the running engine to cancel a question, if this process runs one."""
+    if _engine is None or _tasks is None:
+        return
+    _engine.cancel_context(question_id, ctx)
+    _tasks.cancel(question_id)

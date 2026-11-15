@@ -13,6 +13,7 @@ from twyf.contract.operations import (
 )
 from twyf.db.connection import transaction
 from twyf.db.repos import citations as citations_repo
+from twyf.db.repos import questions as questions_repo
 from twyf.db.repos import sessions as repo
 from twyf.ids import new_id
 from twyf.recording.context import RequestContext
@@ -94,6 +95,8 @@ def delete(ctx: RequestContext, input: DeleteSessionInput) -> None:
     with state.db() as conn, transaction(conn):
         require(conn, input.ws)
         live(conn, input.ws, input.session_id)
+        if questions_repo.running_in_session(conn, input.session_id) is not None:
+            raise ServiceError("conflict", "The session has a running question", {"session_id": input.session_id})
         repo.soft_delete(conn, input.session_id)
         record(
             conn, ctx, "session.deleted", workspace_id=input.ws, session_id=input.session_id, entity_type="session",

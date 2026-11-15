@@ -4,14 +4,14 @@ import inspect
 import logging
 import re
 import typing
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Body, FastAPI, File, Path, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError, create_model
 from pydantic.alias_generators import to_camel
@@ -20,29 +20,40 @@ from twyf import __version__
 from twyf.agents.definitions import sync, sync_config
 from twyf.config import Settings
 from twyf.contract.base import Wire
-from twyf.contract.operations import OPERATIONS, CreateWorkspaceInput, Operation, resolve_handler
+from twyf.contract.events import AgentEvent
+from twyf.contract.operations import (
+    OPERATIONS,
+    CreateWorkspaceInput,
+    GetQuestionEventsInput,
+    Operation,
+    resolve_handler,
+)
 from twyf.db.connection import transaction
 from twyf.db.migrate import migrate
 from twyf.db.repos import embeddings
 from twyf.db.repos import workspaces as workspaces_repo
 from twyf.files.ingest import ingest, pending_ingestion
 from twyf.files.jobs import Jobs, ThreadJobs
-from twyf.http import errors
+from twyf.http import errors, sse
 from twyf.http.context import LOCAL_USER, context_from_request, request_id
 from twyf.ids import new_id
+from twyf.orchestration.engine import Engine
+from twyf.recording.broker import BROKER
 from twyf.recording.context import RequestContext
 from twyf.recording.recorder import record
 from twyf.retrieval.embedder import get_embedder
+from twyf.retrieval.hybrid import HybridRetriever
 from twyf.retrieval.reembed import reembed
-from twyf.services import state, workspaces
+from twyf.retrieval.vector_index import SqliteVecIndex, get_index
+from twyf.runtime import AgentRuntime, get_runtime
+from twyf.runtime.runner import TurnRunner
+from twyf.services import questions, state, workspaces
 from twyf.services.errors import ServiceError
 
 log = logging.getLogger(__name__)
 
 API = "/api/v1"
 FIRST_WORKSPACE = "My workspace"
-"""Placeholder for the runtime boundary (task B21 onward)."""
-type AgentRuntime = Any
 
 _KW = inspect.Parameter.KEYWORD_ONLY
 
@@ -106,7 +117,7 @@ def _endpoint(op: Operation) -> Callable[..., Awaitable[Response]]:
         try:
             data = input_model.model_validate(values)
             if op.kind == "stream":
-                raise ServiceError("internal", "not implemented")
+                return await _stream(op, request, ctx, data)
             handler = resolve_handler(op)
             if op.kind == "upload":
                 upload = typing.cast(UploadFile, kwargs["file"])
@@ -130,11 +141,30 @@ def _endpoint(op: Operation) -> Callable[..., Awaitable[Response]]:
     return endpoint
 
 
+async def _stream(op: Operation, request: Request, ctx: RequestContext, data: Wire) -> Response:
+    """SSE for a stream operation. `get_question_events` with `Accept: application/json` answers at once instead."""
+    if op.name == "get_question_events" and "application/json" in request.headers.get("accept", ""):
+        polled = await run_in_threadpool(questions.events_now, ctx, typing.cast(GetQuestionEventsInput, data))
+        return JSONResponse(_dump(polled))
+    items = typing.cast(AsyncIterator[tuple[int, AgentEvent]], resolve_handler(op)(ctx, data))
+    first = await anext(items)  # errors before the stream starts become an ErrorBody
+
+    async def chained() -> AsyncIterator[tuple[int, AgentEvent]]:
+        yield first
+        async for item in items:
+            yield item
+
+    return StreamingResponse(
+        sse.with_pings(chained()), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+    )
+
+
 def _startup(settings: Settings, jobs: Jobs) -> None:
     """Migrate, snapshot definitions and config, make the first workspace, and resume background work."""
     migrate(settings.data_dir / "twyf.db")
     system = RequestContext(actor_id="system", source="internal", user_id=LOCAL_USER, request_id=new_id("start"))
     with state.db() as conn:
+        questions.recover(conn, system)
         with transaction(conn):
             sync(conn, system, settings)
             config_id = sync_config(conn, system, settings)
@@ -152,10 +182,20 @@ def _startup(settings: Settings, jobs: Jobs) -> None:
 def build_app(settings: Settings, runtime: AgentRuntime | None = None, jobs: Jobs | None = None) -> FastAPI:
     work: Jobs = jobs if jobs is not None else ThreadJobs()
     state.configure(settings, work)
+    agents_runtime = runtime if runtime is not None else get_runtime(settings)
+    probe = state.connect() if (settings.data_dir / "twyf.db").exists() else None
+    index = get_index(probe) if probe is not None else SqliteVecIndex()
+    if probe is not None:
+        probe.close()
+    retriever = HybridRetriever(settings, get_embedder(settings), index)
+    engine = Engine(settings, state.connect, TurnRunner(agents_runtime, settings, state.connect), retriever, BROKER)
+    tasks = questions.Tasks()
+    state.configure_questions(engine, tasks)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         state.configure(settings, work)
+        state.configure_questions(engine, tasks)
         await run_in_threadpool(_startup, settings, work)
         yield
 
@@ -178,7 +218,7 @@ def build_app(settings: Settings, runtime: AgentRuntime | None = None, jobs: Job
 
     @app.get(API + "/health")
     async def health() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction] -- registered by the decorator
-        return {"status": "ok", "version": __version__, "runtime": settings.runtime}
+        return {"status": "ok", "version": __version__, "runtime": agents_runtime.name}
 
     if settings.static_dir is not None:
         app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="static")
