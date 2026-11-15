@@ -15,6 +15,7 @@ from twyf.db.migrate import migrate
 from twyf.db.repos import events as events_repo
 from twyf.files.jobs import InlineJobs
 from twyf.recording.context import RequestContext
+from twyf.retrieval.hybrid import HybridRetriever
 from twyf.services import files, state, workspaces
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -91,3 +92,11 @@ def upload(ctx: RequestContext, ws_id: str, name: str, data: bytes, file_id: str
 
 def add_version(ctx: RequestContext, ws_id: str, file_id: str, name: str, data: bytes) -> FileItem:
     return files.add_version(ctx, AddFileVersionInput(ws=ws_id, file_id=file_id), name=name, stream=io.BytesIO(data))
+
+
+@pytest.fixture
+def retriever(settings: Settings) -> HybridRetriever:
+    from twyf.retrieval.embedder import get_embedder
+    from twyf.retrieval.vector_index import SqliteVecIndex
+
+    return HybridRetriever(settings, get_embedder(settings), SqliteVecIndex())
