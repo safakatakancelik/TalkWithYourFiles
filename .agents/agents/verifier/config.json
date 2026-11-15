@@ -1,0 +1,15 @@
+{
+  "toolConfig": {
+    "enabledBuiltinTools": []
+  },
+  "modelConfig": {},
+  "connection": {
+    "type": "internal"
+  },
+  "twyf": {
+    "kind": "verifier",
+    "skills": [
+      "verify-claims"
+    ]
+  }
+}

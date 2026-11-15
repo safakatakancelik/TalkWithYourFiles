@@ -1,0 +1,20 @@
+{
+  "toolConfig": {
+    "enabledBuiltinTools": []
+  },
+  "modelConfig": {},
+  "connection": {
+    "type": "internal"
+  },
+  "twyf": {
+    "kind": "translator",
+    "skills": [
+      "cite-passages",
+      "volunteer",
+      "work-on-files",
+      "direct-reply",
+      "first-read",
+      "describe-image"
+    ]
+  }
+}

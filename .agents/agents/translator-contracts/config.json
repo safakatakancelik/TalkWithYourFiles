@@ -1,0 +1,14 @@
+{
+  "toolConfig": {
+    "enabledBuiltinTools": []
+  },
+  "modelConfig": {},
+  "connection": {
+    "type": "internal"
+  },
+  "twyf": {
+    "kind": "translator",
+    "extends": "translator",
+    "specialty": "contracts"
+  }
+}

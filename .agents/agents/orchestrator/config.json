@@ -1,0 +1,18 @@
+{
+  "toolConfig": {
+    "enabledBuiltinTools": []
+  },
+  "modelConfig": {},
+  "connection": {
+    "type": "internal"
+  },
+  "twyf": {
+    "kind": "orchestrator",
+    "skills": [
+      "plan-huddle",
+      "assign-files",
+      "review-huddle",
+      "draft-claims"
+    ]
+  }
+}
