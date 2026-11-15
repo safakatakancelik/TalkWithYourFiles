@@ -1,5 +1,6 @@
 """The HTTP door. One route per operation in OPERATIONS, generated here. No rules live in this module."""
 
+import asyncio
 import inspect
 import logging
 import re
@@ -31,7 +32,10 @@ from twyf.contract.operations import (
 from twyf.db.connection import transaction
 from twyf.db.migrate import migrate
 from twyf.db.repos import embeddings
+from twyf.db.repos import files as files_repo
 from twyf.db.repos import workspaces as workspaces_repo
+from twyf.files.describe import describe_image
+from twyf.files.first_read import first_read
 from twyf.files.ingest import ingest, pending_ingestion
 from twyf.files.jobs import Jobs, ThreadJobs
 from twyf.http import errors, sse
@@ -192,12 +196,31 @@ def build_app(settings: Settings, runtime: AgentRuntime | None = None, jobs: Job
     tasks = questions.Tasks()
     state.configure_questions(engine, tasks)
 
+    runner = engine.runner
+
+    async def after_ingest(ctx: RequestContext, file_version_id: str) -> None:
+        await describe_image(runner, state.connect, ctx, file_version_id)
+        if not settings.first_read:
+            return
+        with state.db() as conn:
+            row = files_repo.version(conn, file_version_id)
+            ready = row is not None and files_repo.status(conn, file_version_id, row["availability"]) == "ready"
+        if row is not None and ready:
+            await first_read(runner, state.connect, ctx, row["file_id"])
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        loop = asyncio.get_running_loop()
         state.configure(settings, work)
         state.configure_questions(engine, tasks)
+
+        def hook(ctx: RequestContext, file_version_id: str) -> None:
+            loop.call_soon_threadsafe(lambda: tasks.start_background(after_ingest(ctx, file_version_id)))
+
+        state.configure_after_ingest(hook)
         await run_in_threadpool(_startup, settings, work)
         yield
+        state.configure_after_ingest(None)
 
     app = FastAPI(title="Talk With Your Files", version=__version__, lifespan=lifespan)
     errors.install(app)

@@ -57,7 +57,12 @@ def _submit_ingest(ctx: RequestContext, file_version_id: str) -> None:
     ingest = importlib.import_module("twyf.files.ingest").ingest
     settings = state.settings()
     system = ctx.as_actor("system")
-    state.jobs().submit(lambda: ingest(state.connect, system, settings, file_version_id))
+
+    def job() -> None:
+        ingest(state.connect, system, settings, file_version_id)
+        state.after_ingest(system, file_version_id)
+
+    state.jobs().submit(job)
 
 
 def _duplicate(conn: sqlite3.Connection, ctx: RequestContext, row: sqlite3.Row) -> int:

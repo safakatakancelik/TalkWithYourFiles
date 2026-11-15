@@ -4,7 +4,7 @@ Configured once by the server (and by the test fixtures). Each service call open
 """
 
 import sqlite3
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -86,3 +86,18 @@ def cancel_question(question_id: str, ctx: "RequestContext") -> None:
         return
     _engine.cancel_context(question_id, ctx)
     _tasks.cancel(question_id)
+
+
+type AfterIngest = Callable[["RequestContext", str], None]
+_after_ingest: AfterIngest | None = None
+
+
+def configure_after_ingest(hook: AfterIngest | None) -> None:
+    """What the server does once a file version is indexed: describe an image, then the first read."""
+    global _after_ingest
+    _after_ingest = hook
+
+
+def after_ingest(ctx: "RequestContext", file_version_id: str) -> None:
+    if _after_ingest is not None:
+        _after_ingest(ctx, file_version_id)

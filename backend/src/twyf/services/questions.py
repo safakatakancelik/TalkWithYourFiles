@@ -61,6 +61,22 @@ class Tasks:
 
     def __init__(self) -> None:
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._background: set[asyncio.Task[None]] = set()
+
+    def start_background(self, coro: Coroutine[Any, Any, None]) -> None:
+        """Work outside a question (first reads, image descriptions), kept until done."""
+        task = asyncio.get_running_loop().create_task(coro)
+        self._background.add(task)
+        task.add_done_callback(self._background_done)
+
+    def _background_done(self, task: asyncio.Task[None]) -> None:
+        self._background.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            log.error("background work failed", exc_info=task.exception())
+
+    async def wait_background(self) -> None:
+        while self._background:
+            await asyncio.gather(*self._background, return_exceptions=True)
 
     def start(self, question_id: str, coro: Coroutine[Any, Any, None]) -> None:
         task = asyncio.get_running_loop().create_task(coro, name=f"question {question_id}")

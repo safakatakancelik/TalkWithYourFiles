@@ -38,9 +38,13 @@ class Env:
     async def translators(self) -> list[str]:
         return [a["id"] for a in (await self.client.get(f"/workspaces/{await self.ws()}/agents")).json()]
 
-    async def upload(self, name: str, text: str) -> str:
+    async def upload(self, name: str, text: str | bytes) -> str:
         ws = await self.ws()
-        return (await self.client.post(f"/workspaces/{ws}/files", files={"file": (name, text.encode())})).json()["id"]
+        return (
+            await self.client.post(
+                f"/workspaces/{ws}/files", files={"file": (name, text.encode() if isinstance(text, str) else text)}
+            )
+        ).json()["id"]
 
     async def session(self) -> str:
         return (await self.client.post(f"/workspaces/{await self.ws()}/sessions", json={"title": "S"})).json()["id"]
