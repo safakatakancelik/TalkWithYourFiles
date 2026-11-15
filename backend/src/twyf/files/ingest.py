@@ -1,4 +1,4 @@
-"""The background pipeline: availability check, parse, extraction and blocks, chunks. Calls no model."""
+"""The background pipeline: availability check, parse, extraction and blocks, chunks, vectors. Calls no model."""
 
 import logging
 import sqlite3
@@ -7,7 +7,7 @@ from collections.abc import Callable
 from twyf.citations.normalize import normalize
 from twyf.config import Settings
 from twyf.db.connection import transaction
-from twyf.db.repos import extractions
+from twyf.db.repos import embeddings, extractions
 from twyf.db.repos import files as files_repo
 from twyf.db.repos.extractions import BlockRow
 from twyf.files import integrity
@@ -16,6 +16,8 @@ from twyf.files.parsers import pick_parser
 from twyf.files.parsers.base import ParsedDocument
 from twyf.recording.context import RequestContext
 from twyf.recording.recorder import record
+from twyf.retrieval.embedder import get_embedder
+from twyf.retrieval.reembed import embed_chunks
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +81,23 @@ def index_extraction(conn: sqlite3.Connection, ctx: RequestContext, extraction_i
         )  # fmt: skip
 
 
+def embed_extractions(conn: sqlite3.Connection, settings: Settings, extraction_ids: list[str]) -> int:
+    """Embeds the chunks of these extractions that have no vector yet, 64 at a time."""
+    embedder = get_embedder(settings)
+    if embedder.dim == 0 or not extraction_ids:
+        return 0
+    marks = ", ".join("?" for _ in extraction_ids)
+    with transaction(conn):
+        model = embeddings.model_id(conn, embedder)
+    rows = conn.execute(
+        f"SELECT c.id, c.workspace_id, c.text FROM chunks c WHERE c.extraction_id IN ({marks})"
+        " AND NOT EXISTS (SELECT 1 FROM chunk_embeddings e WHERE e.chunk_id = c.id AND e.embedding_model_id = ?)"
+        " ORDER BY c.id",
+        [*extraction_ids, model],
+    ).fetchall()
+    return embed_chunks(conn, embedder, [(r["id"], r["workspace_id"], r["text"]) for r in rows])
+
+
 def ingest(conn_factory: ConnFactory, ctx: RequestContext, settings: Settings, file_version_id: str) -> None:
     conn = conn_factory()
     try:
@@ -116,9 +135,10 @@ def ingest(conn_factory: ConnFactory, ctx: RequestContext, settings: Settings, f
                     kind=doc.kind, blocks=len(blocks), chars=len(text),
                 )  # fmt: skip
             extraction_ids.append(extraction_id)
-        chunk_count = sum(len(index_extraction(conn, ctx, x)) for x in extraction_ids)
+        chunk_ids = [cid for x in extraction_ids for cid in index_extraction(conn, ctx, x)]
+        embed_extractions(conn, settings, extraction_ids)
         with transaction(conn):
-            _event(conn, ctx, row, "file.indexed", chunks=chunk_count)
+            _event(conn, ctx, row, "file.indexed", chunks=len(chunk_ids))
     finally:
         conn.close()
 
