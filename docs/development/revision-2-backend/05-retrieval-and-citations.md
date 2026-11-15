@@ -4,17 +4,19 @@ Part of the revision 2 backend plan. This document defines ingestion, parsing, c
 
 ## 1. Ingestion
 
-`files/ingest.py::ingest(ctx, file_version_id)` runs inside the upload request, after the file rows are committed:
+`upload_file` and `reference_file` create the file rows and return at once with status `processing` (`02-data-model.md` section 7.2). They hand `files/ingest.py::ingest(conn_factory, ctx, settings, file_version_id)` to the background `Jobs` (`01-architecture.md` section 7):
 
 ```
-bytes ─► blob store ─► parser ─► extraction + blocks ─► chunker ─► chunks + chunks_fts ─► embedder ─► chunk_embeddings
-                                                                                      └─► context map: file node
-then, in the background: first_read turn, and describe_image for images (04-agents.md section 11)
+content at its location ─► availability check ─► parser ─► extraction + blocks ─► chunker ─► chunks + chunks_fts
+                                                                    ─► embedder, 64 chunks at a time ─► chunk_embeddings
+then: first_read turn, and describe_image for images (04-agents.md section 11)
 ```
 
-Each arrow is one transaction with its event (`file.extraction_completed` or `file.extraction_failed`, then `file.indexed`). A failure at any step leaves the file stored and listed with status `unreadable`. The raw file is never changed.
+The whole pipeline is local and calls no model. Its steps and their events: `file.ingest_started`; `file.extraction_completed` or `file.extraction_failed`; `file.indexed` once every chunk is embedded. The extraction and its blocks are one transaction. Chunks are one transaction. Embeddings are written in batches of 64 chunks, one transaction each, so a long file never holds the database for long. A failure at any step leaves the file listed with status `unreadable`. The content is only ever opened for reading.
 
-File type is decided from the extension: `pdf`, `docx`, `csv`, `md`, `txt`; `png`, `jpg`, `jpeg`, `webp`, `gif`, `bmp`, `tif`, `tiff` are `image`; anything else is `other` and is stored without parsing.
+The file becomes `ready`, and so usable in questions, when `file.indexed` is recorded. Keyword search does not wait for anything else, and a file of thousands of pages is handled the same way as a short one: it takes longer to index, and after that a question costs the same.
+
+File type is decided from the extension: `pdf`, `docx`, `csv`, `md`, `txt`; `png`, `jpg`, `jpeg`, `webp`, `gif`, `bmp`, `tif`, `tiff` are `image`; anything else is `other` and is listed without parsing, with status `unreadable`.
 
 ## 2. Parsing
 
@@ -49,7 +51,7 @@ class Parser(Protocol):
 | `docx` | `docx_basic` (`python-docx`): paragraphs and table rows in order. Label is the nearest heading above, or `Paragraph N` | `docling` |
 | `image` | none: the file is `unreadable` unless a description is produced | `docling` with OCR, giving an extraction of kind `ocr`. Label `Image text` |
 
-`TWYF_PARSER=auto` uses Docling when it is importable and the basic parser otherwise. Tests and CI use `basic`, which needs no model download. The Docling adapter is one file (`parsers/docling.py`). Its exact calls must be taken from the Docling documentation at the time of the task, because this plan could not run Docling. Its tests are marked `models` and are not part of CI.
+`TWYF_PARSER=auto` uses Docling when it is importable and the basic parser otherwise. Tests and CI use `basic`, which needs no model download. The Docling adapter is one file (`parsers/docling.py`). Task B37 writes it from the Docling documentation, using Docling's document converter and the page number and bounding box it gives for each item. Its tests are marked `models` and are not part of CI.
 
 ### Images
 
@@ -103,13 +105,15 @@ class VectorIndex(Protocol):
 
 | Implementation | Use |
 |---|---|
-| `FastEmbedEmbedder` | Default. `fastembed.TextEmbedding("BAAI/bge-small-en-v1.5")`, 384 dimensions, runs locally on CPU |
+| `FastEmbedEmbedder` | Default. `fastembed.TextEmbedding(settings.embed_model)`, by default `BAAI/bge-small-en-v1.5`: 384 dimensions, English-centred, runs locally on CPU |
 | `HashEmbedder` | Tests. Splits text into lower-case word tokens, adds 1 at index `sha256(token) mod 64` for each, normalises. Deterministic, no download, and texts that share words score higher |
 | `NullEmbedder` (`TWYF_EMBEDDER=none`) | Keyword search only |
 | `SqliteVecIndex` | Default. One SQL statement using the `sqlite-vec` function `vec_distance_cosine(vector, :query)` over `chunk_embeddings`, filtered by workspace, model and files, ordered, limited. The extension is loaded on each connection with `sqlite_vec.load(conn)` |
 | `NumpyIndex` | Fallback when the extension cannot be loaded. Reads the same rows and computes dot products with numpy |
 
 Vectors are stored once, as float32 BLOBs in `chunk_embeddings` (`struct.pack(f"<{dim}f", *vector)`), in the same database file as everything else. Both indexes read that table, so there is no separate index to keep in step with soft deletes, versions or workspaces. Search is exact. Each embedding row names its `embedding_models` row, so changing the model means adding rows for the new model, not rewriting old ones.
+
+**Changing the embedding model.** Set `TWYF_EMBED_MODEL` (any model `fastembed` supports, for example a multilingual one) and restart. At start the server finds or inserts the `embedding_models` row for the configured name and version, and queues one background job, `retrieval/reembed.py::reembed`, that embeds every chunk and note of live files lacking a vector for that model, in batches of 64. Search uses only vectors of the current model. Until the job has reached a chunk, that chunk is found by keyword search only. Old vectors are kept. A different embedder altogether is a new class implementing `Embedder`.
 
 `sqlite-vec` 0.1.9 was loaded successfully on Python 3.13 and 3.14 while writing this plan. It is pre-1.0, which is why only one plain function from it is used and a fallback exists. Replacing it with LanceDB, Qdrant or another store later means writing one more `VectorIndex`.
 
@@ -123,7 +127,9 @@ class Retriever(Protocol):
     def search(self, ctx, *, workspace_id: str, query: str, file_ids: list[str] | None, k: int) -> list[Passage]: ...
 ```
 
-`passage_id` is `"p" + str(chunk_id)`. `location` is the label of the first block the chunk covers. Only chunks of the current version of live files are searched.
+`passage_id` is `"p" + str(chunk_id)`. `location` is the label of the first block the chunk covers. Only chunks of the current version of usable files are searched (view `v_usable_files`: live, and passing the availability check of `02-data-model.md` section 7.2).
+
+Search is the only way an agent reaches file content. However long a file is, a translator's turn gets `TWYF_PASSAGES_PER_TURN` passages (8), and may ask for up to `TWYF_SEARCHES_PER_TURN` further searches (3) with queries of its own. So a five-thousand-page file costs a question no more than a five-page one: the vectors and keywords find the close areas, and the translator reads and cites only those.
 
 | Mode | Steps |
 |---|---|
@@ -131,11 +137,11 @@ class Retriever(Protocol):
 | `vector` | Embed the query. Top 20 from the `VectorIndex` |
 | `hybrid` (default) | Both lists, fused by reciprocal rank fusion: `score = sum(1 / (60 + rank))` over the lists the chunk appears in |
 
-Then the weight boost of section 7 is applied and the top `k` are returned (`k = 8` for a work turn, `12` for a first read, which takes the first chunks in file order instead of searching).
+Then the weight boost of section 7 is applied and the top `k` are returned (`k = TWYF_PASSAGES_PER_TURN` for a work turn). A first read does not search: it takes the first `TWYF_FIRST_READ_CHUNKS` chunks in file order (`04-agents.md` section 11).
 
 The query for a `work` turn is the question followed by the focus. Every search is recorded as `retrieval.searched` with the query, mode and returned chunk ids.
 
-**Graph retrieval.** The owner plans to try GraphRAG. The `Retriever` protocol is the slot for it: a `GraphRetriever` would find entities in the query, follow `entity_mentions` and `entity_relations` (`02-data-model.md` section 4.9) to files and passages, and fuse that list with the other two. The tables exist. The retriever is not built in version 1.
+**Graph retrieval is not part of version 1. Do not build it.** The owner plans to try GraphRAG later. The `Retriever` protocol is the slot for it: a `GraphRetriever` would find entities in the query, follow `entity_mentions` and `entity_relations` (`02-data-model.md` section 4.9) to files and passages, and fuse that list with the other two. Version 1 only creates the tables.
 
 ## 6. Citations
 
@@ -198,7 +204,7 @@ Weights come from the `weights` lookup: `off` 0, `low` 0.5, `normal` 1, `high` 2
 
 | Where | Effect |
 |---|---|
-| Notes given to an agent | `off` notes are never given to any agent and are never searched. They stay visible to the user |
+| Notes given to an agent | `off` notes are never given to any agent and are never searched. They stay visible to the user. The same holds for every note about a file that is deleted, `missing` or `changed` |
 | Order and budget | For a `work` turn the agent gets the notes on its assigned files, ordered by weight (high first) and then newest first, up to 20 notes or 6,000 characters. When the budget runs out, `low` notes are the first left out |
 | Notes from other files | Up to 5 more notes found by hybrid search over note text (`notes_fts`, `note_embeddings`), ranked by fused score times the weight's factor |
 | Wording | Each note is labelled with its weight. The `work-on-files` skill tells the agent to treat `high` notes as the user's priority and `low` notes as background |
@@ -218,4 +224,4 @@ Three limits keep weights from weakening the citation rule:
 - **Links.** One link per `entity_mentions` row, from the file id to the entity id.
 - **During a question.** New entities and new links are collected and sent in one `context` event just before the answer, and recorded as `context.extended`. Entities and links that already existed are not sent again.
 - **Reading.** `get_context_map` returns live file nodes, entities with at least one mention in a live file, and their links.
-- **Later.** Entity-to-entity relations go into `entity_relations` when graph retrieval is built. Merging near-duplicate entities ("Andes" and "Andes Green Coffee") is not done in version 1.
+- **Not in version 1.** Nothing writes to `entity_relations`. Near-duplicate entities ("Andes" and "Andes Green Coffee") are not merged: they are two nodes.

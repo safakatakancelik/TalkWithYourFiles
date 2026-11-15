@@ -1,10 +1,10 @@
 # 09 Decisions
 
-Part of the revision 2 backend plan. Section 1 records what the owner decided during planning on 2026-11-15. Section 2 records the planner's choices, with what was rejected. Section 3 lists open questions. Section 4 lists sources. Section 5 checks the plan against the planning brief.
+Part of the revision 2 backend plan. Section 1 records what the owner decided during planning on 2026-11-15. Section 2 records the planner's choices, with what was rejected. Section 3 lists what is deliberately left out of version 1. There are no open questions. Section 4 lists sources. Section 5 checks the plan against the planning brief.
 
 ## 1. Owner decisions made during planning
 
-These add to, and in two places change, the numbered decisions in `planning-brief.md`.
+These add to the numbered decisions in `planning-brief.md`, and change them where marked: O6 changes decision 10, O13 narrows decision 28, and O16 changes how decisions 2 and 7 are met.
 
 | # | Decision | Effect |
 |---|---|---|
@@ -19,6 +19,13 @@ These add to, and in two places change, the numbered decisions in `planning-brie
 | O9 | "Run demo" in the UI keeps playing the mock. The real backend gets the demo as a test and a seed command, with real file contents | `10-demo-scenario.md` |
 | O10 | PDFs need a good parser. Images are in scope through a transcription, a summary and interpretation guidance. Video is out. Use established free frameworks, nothing written from scratch where one exists | Docling (`05-retrieval-and-citations.md` section 2) |
 | O11 | The stack is approved. The web framework is FastAPI. The owner's concern was ASGI and later serverless hosting, with local use for now | D4 |
+| O12 | Both runtimes are supported: the queue worked by a harness over MCP, and the headless command | `04-agents.md` section 6.3 |
+| O13 | Reads are not recorded in the event log | D14 |
+| O14 | **No agent reads a whole file.** A file of thousands of pages must be reached through vectors, keywords and citations, a few passages at a time | The first read is one bounded turn; ingestion is local, in the background and in batches; every turn gets a fixed number of passages (`04-agents.md` section 11, `05-retrieval-and-citations.md` sections 1 and 5) |
+| O15 | The event log, a file's text and the replay of a question's events have no UI in version 1 | `03-contract.md` section 3 |
+| O16 | **The app refers to files and does not own them.** The user owns their files. The app never removes or changes file content, locally or anywhere. Files may later be referred to on remote servers. If a file is gone or its hash no longer matches, the app must know and must not go on working on it | Files by upload or by path, the availability check, statuses `missing` and `changed` (`02-data-model.md` section 7.2) |
+| O17 | Files keep their original names and cannot be renamed. Agents, notes and sessions can be renamed or edited. Everything is versioned and every delete is soft | `02-data-model.md` section 7.3; eight operations in `03-contract.md` section 3 |
+| O18 | The embedding model is English-centred now, and other models can be introduced later | `TWYF_EMBED_MODEL` and the re-embed job (`05-retrieval-and-citations.md` section 4) |
 
 ## 2. Planner decisions
 
@@ -50,9 +57,15 @@ These add to, and in two places change, the numbered decisions in `planning-brie
 
 **D12. Files are identified by SHA-256.** Same name and content: nothing new. Same name, new content: a new version. *Rejected:* always creating a new file (loses the link between versions).
 
-**D13. Delete is soft everywhere, and only workspaces can be deleted in version 1 (O8).**
+**D12a. A file is a reference with a location (O16).** Two location kinds are built: `store` for bytes sent by a browser, which cannot give a path, and `path` for a file read in place. `remote` is reserved. Uploaded bytes are kept by the app because otherwise an uploaded file could not be referred to at all, and the app treats that copy like any other file of the user: it is never changed or removed. The availability check compares size and modification time first and hashes only when they differ, so checking thousands of large files at the start of a question stays cheap. Notes, citations and answers about a file that has gone stay readable, because the extracted text they point into is in the database; no agent works on such a file. *Rejected:* hashing every file on every use (too slow for large files), and re-reading a changed file automatically (the content the notes were written about would silently stop being the content in use).
 
-**D14. Reads are not recorded.** The brief asks for every action. Listing files changes nothing and would bury the log. Every state change and every agent call is recorded.
+**D12b. A note "rename" is an edit of its text, and only for notes the user wrote (O17).** Notes have no name, so the owner's "rename notes" is taken as editing. An agent's note cannot be edited because its text was checked against its citations; changing the words would break that link. It can be reweighted or deleted.
+
+**D13. Every delete is soft (O8, O17).** Workspaces, files, agents, notes and sessions can be deleted. No row and no file content is ever removed. There is no erase operation.
+
+**D14. Reads are not recorded (O13).** Listing files changes nothing and would bury the log. Every state change and every agent call is recorded.
+
+**D14a. Ingestion runs in the background (O14).** A long file can take minutes to parse and embed. The request returns at once with status `processing`. Tests use an inline job runner so they stay deterministic.
 
 ### Contract
 
@@ -80,7 +93,7 @@ These add to, and in two places change, the numbered decisions in `planning-brie
 
 **D25. Direct chat with a translator gets the mechanical check but not the verifier,** following brief decision 14.
 
-**D26. A first read runs after each upload (configurable).** It is where a file's cited summary note and first entities come from, matching the demo's "earlier read". *Cost:* one turn per upload.
+**D26. A first read runs after each file is indexed: one turn over the opening of the file, never more (O14).** It is where a file's cited summary note and first entities come from, matching the demo's "earlier read". It is given the first 12 chunks whatever the file's length, says so in its summary when the file is longer, and can be switched off. *Rejected:* summarising a whole file by reading it in pieces (cost grows with length, which the owner ruled out), and no first read at all (the orchestrator would know nothing about a file except its name when pairing translators with files).
 
 **D27. Agent conventions beyond the protocol sit under a `twyf` key in `config.json`.** The protocol leaves kinds, inheritance and per-agent skill lists open. The global `~/.agents` layer is not read, so behaviour depends only on the repository.
 
@@ -90,7 +103,7 @@ These add to, and in two places change, the numbered decisions in `planning-brie
 
 **D29. Hybrid search by reciprocal rank fusion of FTS5 BM25 and cosine similarity.** A standard method with no tuning. GraphRAG has a reserved slot (`Retriever` protocol, `entity_relations` table) and is not built.
 
-**D30. Local embeddings with `fastembed` and `BAAI/bge-small-en-v1.5`.** Free, CPU-only, no PyTorch. The model is English-centred; a multilingual model is a one-line change and a re-embed.
+**D30. Local embeddings with `fastembed` and `BAAI/bge-small-en-v1.5` (O18).** Free, CPU-only, no PyTorch. The model is English-centred. Another model is a setting: vectors are stored per model, and a background job embeds existing chunks for the new one.
 
 **D31. Docling for rich parsing, with basic parsers always installed.** Docling is MIT, handles layout, tables, OCR and images, and keeps page positions. PyMuPDF was rejected for its AGPL licence against this project's MIT licence. MarkItDown was rejected because it drops positions. Tests use the basic parsers so they need no model download.
 
@@ -104,18 +117,29 @@ These add to, and in two places change, the numbered decisions in `planning-brie
 
 **D35. Python 3.13 or newer, `uv`, `ruff`, `pyright` strict, `pytest`, 90% coverage overall and 100% on the state machine, claims, arithmetic and citation code.**
 
-## 3. Open questions for the owner
+## 3. Deliberately not in version 1
 
-None blocks the implementation. Each has the behaviour the plan uses until the owner says otherwise.
+There are no open questions. Everything below is decided. The implementer must not build any of it and must not treat it as unfinished.
 
-1. **Parity gap.** `list_events`, `get_file_text` and `get_question_events` exist in the API and MCP but have no UI. The parity rule asks for one. Planned behaviour: leave them without UI in version 1.
-2. **True erase.** Soft delete keeps everything. If a file must really be removed (for example personal data uploaded by mistake), a purge operation is needed that breaks the "nothing is removed" rule on purpose. Planned behaviour: none in version 1.
-3. **First read on upload** costs one agent turn per file. Planned behaviour: on, switchable with `TWYF_FIRST_READ`.
-4. **Other deletes and renames** (files, agents, notes, sessions). The schema is ready. Planned behaviour: not in version 1.
-5. **Language.** The default embedding model is English-centred. Planned behaviour: keep it until the owner names other languages.
-6. **Conversation memory.** The chat agent and orchestrator receive the last 6 messages of the session. Planned behaviour: that fixed window.
-7. **Entity merging** in the context map ("Andes" and "Andes Green Coffee" are two nodes). Planned behaviour: no merging.
-8. **Worker safety.** With the `queue` runtime the harness has its own tools. `06-mcp.md` section 6 asks the owner to run it with tools restricted. This cannot be enforced by the backend.
+| Not built | What version 1 does instead |
+|---|---|
+| A UI for the event log, a file's text and question replay (O15) | API and MCP only |
+| Erasing data | Soft delete only (D13) |
+| Renaming files (O17) | A file keeps its original name |
+| Editing an agent's note (D12b) | Reweight or delete it |
+| Files on remote servers (O16) | `store` and `path` locations. The `remote` code exists in the lookup table and nothing uses it |
+| Graph retrieval | Hybrid keyword and vector search. The `entity_relations` table is created and never written |
+| Merging similar entities in the context map | Each distinct label is its own node |
+| A direct model API runtime | The `fake`, `queue` and `command` runtimes |
+| A verifier pool, or user-created verifiers (O7) | One verifier per workspace |
+| Recording reads (O13) | Only state changes and agent calls are recorded |
+| Video and audio files | Stored with type `other`, not parsed |
+| Reading `~/.agents` | Only the repository's `.agents` |
+| Automatic resume of a question after a crash | The question is marked `interrupted` |
+| Sign-in and more than one user | One local user `u_local`. Every row and event already carries the user and workspace |
+| A longer conversation memory | The chat agent and orchestrator receive the last 6 messages of the session |
+
+One limit that the backend cannot remove: with the `queue` runtime the harness has its own tools, and the backend cannot restrict them. `06-mcp.md` section 6 tells the owner how to run the worker.
 
 ## 4. Sources
 
@@ -145,8 +169,8 @@ Versions seen installed together on Python 3.13 and 3.14: `mcp` 2.3.0, `pydantic
 | 4 Notes are the only link | `02-data-model.md` section 4.6 |
 | 5 Weights | `05-retrieval-and-citations.md` section 7; `note_weights` |
 | 6 Anyone can read earlier notes | `list_notes`; notes in every agent input |
-| 7 The record kept | Blobs, messages and notes with citations are immutable and never removed |
-| 8 Parity | `06-mcp.md` section 2; `test_parity`; gap listed in section 3 item 1 |
+| 2 and 7, as changed by O16 | The app refers to files and never changes or removes their content. Extracted text, messages and notes with citations are kept in the database and never removed |
+| 8 Parity | `06-mcp.md` section 2; `test_parity`. Three read operations have no UI by the owner's decision O15 |
 | 9 One local user, rows carry user and workspace | `users`, `workspace_id` on every table, `user_id` on every event |
 | 10 Translator output based on citations | Statements always. Notes as changed by O6 |
 | 11 Every claim in an answer cited | `04-agents.md` sections 8 and 10 |
@@ -161,7 +185,7 @@ Versions seen installed together on Python 3.13 and 3.14: `mcp` 2.3.0, `pydantic
 | 25 MCP server | `06-mcp.md` |
 | 26 Backend agnostic of the frontend | `01-architecture.md` section 4 |
 | 27 Frontend features and demo keep working | `03-contract.md` sections 6 and 7; only additions |
-| 28 Every action recorded with its source | `02-data-model.md` sections 3 and 5; `07-test-plan.md` section 7. Reads excepted (D14) |
+| 28 Every action recorded with its source | `02-data-model.md` sections 3 and 5; `07-test-plan.md` section 7. Reads excepted by the owner's decision O13 |
 | 29 Everything versioned | `02-data-model.md` sections 4.4 and 7.4 |
 | 30 Slowly changing dimensions, lookups, linking tables | `02-data-model.md` sections 2 and 4.1 |
 | 31 Types central | Pydantic contract, typed turn models, pyright strict |
@@ -174,13 +198,13 @@ Versions seen installed together on Python 3.13 and 3.14: `mcp` 2.3.0, `pydantic
 | One source of truth for types, drift check | `03-contract.md` section 1 |
 | Transport, event stream, cancel | `03-contract.md` section 4.2 |
 | Contract additions, every change to `types.ts` | `03-contract.md` sections 4.1 and 6 |
-| Frontend work | `03-contract.md` section 7; tasks F1 to F7 |
+| Frontend work | `03-contract.md` section 7; tasks F1 to F8 |
 | Full SQLite schema | `02-data-model.md` section 4 |
 | Recording approach, taxonomy, actor and source, identifiers | `02-data-model.md` sections 3 and 5 |
 | Versioning of agents, skills, prompts | `02-data-model.md` section 7.4 |
 | Slowly changing dimension per entity | `02-data-model.md` section 2 |
-| Raw file storage, duplicates, re-uploads | `02-data-model.md` section 7.2 |
-| Meaning of delete | `02-data-model.md` section 7.3 |
+| Raw file storage, duplicates, re-uploads, missing or changed files | `02-data-model.md` section 7.2 |
+| Meaning of delete, rename and edit | `02-data-model.md` section 7.3 |
 | Migrations | `02-data-model.md` section 8 |
 | Parsing, chunking, embeddings, vectors | `05-retrieval-and-citations.md` sections 2 to 4 |
 | Locating a citation | `05-retrieval-and-citations.md` section 6 |

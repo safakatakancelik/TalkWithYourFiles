@@ -80,7 +80,7 @@ The figures agree with each other: the total row is the weighted result of the t
 
 ## 3. Seed data
 
-`twyf seed-demo` (`services/demo.py::seed`) creates the workspace, uploads the six files through `services.files.upload` with the fixed ids, creates the five translators, then creates the rows below directly through the repositories with actor `system` and source `cli`. It records `demo.seeded`. It refuses to run if workspace `demo` exists.
+`twyf seed-demo` (`services/demo.py::seed`) creates the workspace, adds the six files through `services.files.upload` with the fixed ids and `InlineJobs`, so they are indexed before it goes on, creates the five translators, then creates the rows below directly through the repositories with actor `system` and source `cli`. It records `demo.seeded`. It refuses to run if workspace `demo` exists.
 
 Seed notes, all weight `normal`. Each citation is made with `create_citation` from the quote, so each is mechanically checked. This closes the gap named in decision 12.
 

@@ -1,6 +1,6 @@
 # 08 Implementation plan
 
-Part of the revision 2 backend plan. Ordered tasks for the implementer. Tasks B01 to B38 build the backend. Tasks F1 to F7 change the frontend.
+Part of the revision 2 backend plan. Ordered tasks for the implementer. Tasks B01 to B38 build the backend. Tasks F1 to F8 change the frontend.
 
 ## How to use this plan
 
@@ -9,7 +9,7 @@ Part of the revision 2 backend plan. Ordered tasks for the implementer. Tasks B0
 - Write the tests named under **Tests** first, from their pass conditions in `07-test-plan.md`, then the code.
 - A task is done when its **Done when** command succeeds. Unless it says otherwise, that command is run from `backend/` and is followed by the full check:
   `uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest`
-- Do not add features, options or abstractions that no document names. If a document and the code disagree, or something needed is missing, stop and ask the owner.
+- Do not add features, options or abstractions that no document names. `09-decisions.md` section 3 lists what is deliberately not in version 1: build none of it. The documents have no open questions. If a document and the code disagree, or something needed is missing, stop and ask the owner.
 - Never import from `frontend/` in the backend. Never write a route or an MCP tool by hand: both come from `OPERATIONS`.
 - Commit after each task with the task id in the message.
 - **OWNER REVIEW** lines are stopping points. Stop there and wait.
@@ -59,7 +59,7 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Goal:** the full list of operations, with every handler present as a stub.
 - **Read:** `03-contract.md` section 3. `01-architecture.md` section 2.
 - **Files:** `contract/operations.py`, `services/errors.py`, `services/__init__.py`, one stub module per service named in the handler strings (`workspaces.py`, `files.py`, `agents.py`, `notes.py`, `sessions.py`, `questions.py`, `events.py`, `turns.py`, `contextmap.py`), `recording/context.py`, tests.
-- **Signatures:** `Operation` as in section 3; `OPERATIONS: list[Operation]` with all 24 rows of the table; one input model per operation named `<OperationNameInCamel>Input` (for example `UploadFileInput(ws: str)`, `SetNoteWeightInput(ws, note_ids, weight)`); `get_operation(name) -> Operation`; `resolve_handler(op) -> Callable`. `class ServiceError(Exception)` with `code`, `message`, `details`, and `HTTP_STATUS: dict[str, int]`. `@dataclass(frozen=True) class RequestContext: actor_id: str; source: str; user_id: str; request_id: str; client: str | None = None; cause_event_id: int | None = None`, with `ctx.caused_by(event_id) -> RequestContext` and `ctx.as_actor(actor_id, source="internal") -> RequestContext`. Every handler has the signature `def <name>(ctx: RequestContext, input: <InputModel>) -> <output>` and for now raises `ServiceError("internal", "not implemented")`. Stream handlers are `async def ... -> AsyncIterator[AgentEvent]`.
+- **Signatures:** `Operation` as in section 3; `OPERATIONS: list[Operation]` with all 32 rows of the table; one input model per operation named `<OperationNameInCamel>Input` (for example `UploadFileInput(ws: str)`, `SetNoteWeightInput(ws, note_ids, weight)`); `get_operation(name) -> Operation`; `resolve_handler(op) -> Callable`. `class ServiceError(Exception)` with `code`, `message`, `details`, and `HTTP_STATUS: dict[str, int]`. `@dataclass(frozen=True) class RequestContext: actor_id: str; source: str; user_id: str; request_id: str; client: str | None = None; cause_event_id: int | None = None`, with `ctx.caused_by(event_id) -> RequestContext` and `ctx.as_actor(actor_id, source="internal") -> RequestContext`. Every handler has the signature `def <name>(ctx: RequestContext, input: <InputModel>) -> <output>` and for now raises `ServiceError("internal", "not implemented")`. Stream handlers are `async def ... -> AsyncIterator[AgentEvent]`.
 - **Tests:** `test_operations_unique_and_resolvable`.
 - **Done when:** `uv run pytest tests/unit/contract/test_operations.py`.
 - **Depends on:** B04.
@@ -108,19 +108,19 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 
 ### B10 Workspaces and agents
 - **Goal:** the first real operations.
-- **Read:** `02-data-model.md` sections 4.2, 4.5, 6 (last paragraph), 7.3. `03-contract.md` section 2 (mapping rules).
+- **Read:** `02-data-model.md` sections 4.2, 4.5, 6 (last paragraph), 7.3 (rows for workspaces and agents). `03-contract.md` section 2 (mapping rules).
 - **Files:** `db/repos/workspaces.py`, `db/repos/agents.py`, `services/workspaces.py`, `services/agents.py`, `services/mapping.py`, tests, and the `ws` fixture.
-- **Signatures:** `workspaces.list(ctx, input) -> list[Workspace]`, `create(ctx, CreateWorkspaceInput) -> Workspace` (also creates the orchestrator, verifier, chat agent and two generic translators, each with an `actors` row and an `agent.created` event), `rename`, `delete`, `require(conn, ws_id) -> None` raising `not_found`. `agents.list(ctx, input) -> list[Agent]` (translators only), `agents.create(ctx, CreateAgentInput) -> Agent`, `agents.builtin(conn, ws_id, kind) -> AgentRow`. `mapping.actor_to_wire(conn, ws_id, actor_id) -> str` applying the constants rule.
+- **Signatures:** `workspaces.list(ctx, input) -> list[Workspace]`, `create(ctx, CreateWorkspaceInput) -> Workspace` (also creates the orchestrator, verifier, chat agent and two generic translators, each with an `actors` row and an `agent.created` event), `rename`, `delete`, `require(conn, ws_id) -> None` raising `not_found`. `agents.list(ctx, input) -> list[Agent]` (translators only), `agents.create(ctx, CreateAgentInput) -> Agent`, `agents.rename(ctx, RenameAgentInput) -> Agent`, `agents.delete(ctx, DeleteAgentInput) -> None` (both for translators only; the `conflict` rule for a running huddle is added in B28), `agents.builtin(conn, ws_id, kind) -> AgentRow`. `mapping.actor_to_wire(conn, ws_id, actor_id) -> str` applying the constants rule.
 - **Tests:** repository tests (`test_create_and_get`, `test_workspace_isolation`, `test_type2_history`, `test_soft_delete_hidden`) for both, and service tests for each function.
 - **Done when:** `uv run pytest tests/unit/services/test_workspaces.py tests/unit/services/test_agents.py tests/unit/db/repos`.
 - **Depends on:** B09.
 
-### B11 Blob store and upload
-- **Goal:** files are stored and versioned. Parsing comes in B13.
-- **Read:** `02-data-model.md` sections 4.3 and 7.2. `01-architecture.md` section 9 ("Uploads"). `05-retrieval-and-citations.md` section 1 (file types).
-- **Files:** `files/store.py`, `files/types.py`, `db/repos/files.py`, `services/files.py` (`upload`, `list`), tests.
-- **Signatures:** `store.save(data_dir: Path, stream: BinaryIO, max_bytes: int) -> tuple[str, int, Path]` (sha256, size, path; raises `ServiceError("too_large")`); `types.file_type(name: str) -> FileType`; `files.upload(ctx, input: UploadFileInput, *, name: str, stream: BinaryIO, file_id: str | None = None) -> FileItem`; `files.list(ctx, input) -> list[FileItem]`. `upload` calls `files.ingest.ingest(...)` when that module exists; until B13 the file's status is `unreadable`.
-- **Tests:** `test_blob_store_content_addressed`, `test_blob_store_rejects_oversize`, `test_upload_cases`, `test_file_type_from_extension`, repository tests for files.
+### B11 File references: upload, reference by path, availability
+- **Goal:** files are referred to, versioned and checked. Parsing comes in B13.
+- **Read:** `02-data-model.md` sections 4.3, 7.2 and 7.3 (row `delete_file`). `01-architecture.md` section 9 ("Uploads", "References by path"). `05-retrieval-and-citations.md` section 1 (file types). `09-decisions.md` O16.
+- **Files:** `files/store.py`, `files/types.py`, `files/integrity.py`, `files/jobs.py`, `db/repos/files.py`, `services/files.py` (`upload`, `reference`, `list`, `delete`), tests, and the `jobs` fixture.
+- **Signatures:** `store.save(data_dir: Path, stream: BinaryIO, max_bytes: int) -> tuple[str, int, Path]` (sha256, size, path under `files/`; raises `ServiceError("too_large")`; never overwrites an existing file); `integrity.sha256_of(path: Path) -> str`; `integrity.verify(conn, ctx, file_version_id: str) -> str`; `integrity.verify_workspace(conn, ctx, workspace_id: str) -> list[tuple[str, str]]` (file id and state for every file that is not `ok`); `types.file_type(name: str) -> FileType`; `class Jobs(Protocol): submit(fn: Callable[[], None]) -> None; join() -> None`, with `InlineJobs` and `ThreadJobs`; `files.upload(ctx, input: UploadFileInput, *, name: str, stream: BinaryIO, file_id: str | None = None) -> FileItem`; `files.reference(ctx, input: ReferenceFileInput, *, file_id: str | None = None) -> FileItem`; `files.list(ctx, input) -> list[FileItem]` (runs `verify_workspace` first); `files.delete(ctx, DeleteFileInput) -> None`. `upload` and `reference` submit `files.ingest.ingest` to `Jobs` when that module exists; until B13 the status stays `processing`. No function in the backend opens file content for writing, and none removes it.
+- **Tests:** `test_store_named_by_hash`, `test_store_rejects_oversize`, `test_upload_cases`, `test_reference_file`, `test_content_never_written`, the five `test_verify_*` tests, `test_jobs`, `test_file_type_from_extension`, repository tests for files.
 - **Done when:** `uv run pytest tests/unit/files tests/unit/services/test_files.py`.
 - **Depends on:** B10.
 
@@ -137,17 +137,17 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Goal:** an uploaded file becomes searchable text.
 - **Read:** `05-retrieval-and-citations.md` sections 1, 2 ("Canonical text") and 3. `02-data-model.md` section 4.3.
 - **Files:** `files/chunker.py`, `files/ingest.py`, `db/repos/extractions.py`, tests. `services/files.py` gains `get_text` and the real `status`.
-- **Signatures:** `chunk(blocks: list[BlockSpan]) -> list[ChunkSpan]` (`BlockSpan(char_start, char_end, text)`, `ChunkSpan(char_start, char_end, text)`); `build_extraction(doc: ParsedDocument) -> tuple[str, list[BlockRow]]`; `ingest(conn_factory, ctx, settings, file_version_id: str) -> None` (parse, store extraction and blocks, chunk, fill `chunks` and `chunks_fts`, record the events; embedding is added in B14); `files.get_text(ctx, GetFileTextInput) -> FileText`.
-- **Tests:** `test_canonical_text_offsets`, `test_parse_failure_marks_unreadable`, `test_chunker_rules`.
+- **Signatures:** `chunk(blocks: list[BlockSpan]) -> list[ChunkSpan]` (`BlockSpan(char_start, char_end, text)`, `ChunkSpan(char_start, char_end, text)`); `build_extraction(doc: ParsedDocument) -> tuple[str, list[BlockRow]]`; `ingest(conn_factory, ctx, settings, file_version_id: str) -> None` (run `integrity.verify` and stop if the file is not `ok`; record `file.ingest_started`; parse; store extraction and blocks; chunk; fill `chunks` and `chunks_fts`; record the events; embedding is added in B14); `pending_ingestion(conn) -> list[str]` (live file versions with no extraction); `files.get_text(ctx, GetFileTextInput) -> FileText`.
+- **Tests:** `test_canonical_text_offsets`, `test_parse_failure_marks_unreadable`, `test_chunker_rules`, `test_unusable_file_hidden_from_agents` (the search part is added in B15).
 - **Done when:** `uv run pytest tests/unit/files`.
 - **Depends on:** B11, B12.
 
 ### B14 Embedders and vector indexes
 - **Goal:** vectors are stored and searched.
 - **Read:** `05-retrieval-and-citations.md` section 4. `02-data-model.md` section 4.3 (embedding tables).
-- **Files:** `retrieval/embedder.py` (`HashEmbedder`, `NullEmbedder`, `get_embedder(settings)`; `FastEmbedEmbedder` comes in B37), `retrieval/vector_index.py` (`SqliteVecIndex`, `NumpyIndex`, `get_index(conn)`), `db/repos/embeddings.py`, tests. `files/ingest.py` embeds chunks after chunking.
-- **Signatures:** as in section 4, plus `pack(vector: list[float]) -> bytes`, `unpack(blob: bytes) -> list[float]`, `embeddings.model_id(conn, embedder) -> int`.
-- **Tests:** `test_hash_embedder`, `test_vector_index_contract`.
+- **Files:** `retrieval/embedder.py` (`HashEmbedder`, `NullEmbedder`, `get_embedder(settings)`; `FastEmbedEmbedder` comes in B37), `retrieval/vector_index.py` (`SqliteVecIndex`, `NumpyIndex`, `get_index(conn)`), `db/repos/embeddings.py`, `retrieval/reembed.py`, tests. `files/ingest.py` embeds chunks after chunking, 64 at a time, one transaction per batch.
+- **Signatures:** as in section 4, plus `pack(vector: list[float]) -> bytes`, `unpack(blob: bytes) -> list[float]`, `embeddings.model_id(conn, embedder) -> int`, `reembed(conn_factory, ctx, embedder, batch: int = 64) -> int` (the number of vectors written).
+- **Tests:** `test_hash_embedder`, `test_vector_index_contract`, `test_ingest_batches`, `test_reembed_for_new_model` (its note part is added in B17).
 - **Done when:** `uv run pytest tests/unit/retrieval/test_embedder.py tests/unit/retrieval/test_vector_index.py`.
 - **Depends on:** B13.
 
@@ -155,7 +155,7 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Goal:** keyword, vector and hybrid retrieval of passages.
 - **Read:** `05-retrieval-and-citations.md` section 5.
 - **Files:** `retrieval/keyword.py`, `retrieval/hybrid.py`, tests.
-- **Signatures:** `keyword.fts_query(text: str) -> str`; `keyword.search(conn, *, workspace_id, query, file_ids, k) -> list[tuple[int, float]]`; `class HybridRetriever` implementing `Retriever`, constructed with `(settings, embedder, index)`; `first_chunks(conn, *, workspace_id, file_id, k) -> list[Passage]`. The weight boost is a parameter `boost: Callable[[int], float] | None` for now.
+- **Signatures:** `keyword.fts_query(text: str) -> str`; `keyword.search(conn, *, workspace_id, query, file_ids, k) -> list[tuple[int, float]]`; `class HybridRetriever` implementing `Retriever`, constructed with `(settings, embedder, index)`; `first_chunks(conn, *, workspace_id, file_id, k) -> list[Passage]`. Every query reads files through the view `v_usable_files`. The weight boost is a parameter `boost: Callable[[int], float] | None` for now.
 - **Tests:** `test_keyword_search`, `test_hybrid_fusion`, `test_only_current_versions_searched`.
 - **Done when:** `uv run pytest tests/unit/retrieval`.
 - **Depends on:** B14.
@@ -171,18 +171,18 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 
 ### B17 Notes and weights
 - **Goal:** notes with the citation rule, weights and their effect on what agents get.
-- **Read:** `02-data-model.md` sections 4.6 and 7.1. `05-retrieval-and-citations.md` section 7.
+- **Read:** `02-data-model.md` sections 4.6, 7.1 and 7.3 (rows `edit_note`, `delete_note`). `05-retrieval-and-citations.md` section 7.
 - **Files:** `db/repos/notes.py`, `services/notes.py`, `retrieval/weights.py`, tests. `retrieval/hybrid.py` uses the boost from `weights.py`.
-- **Signatures:** `notes.list(ctx, input) -> list[Note]`; `notes.add(ctx, AddNoteInput) -> Note` (user note, kind `interpretation`); `notes.create_agent_note(conn, ctx, *, workspace_id, file_id, author_id, kind, text, citation_ids: list[str], numbers: list[int], question_id, turn_id) -> NoteRow` (enforces section 7.1; fills `notes_fts` and `note_embeddings`); `notes.set_weight(ctx, SetNoteWeightInput) -> None`; `weights.notes_for_turn(conn, *, workspace_id, file_ids, query) -> list[NoteIn]`; `weights.passage_boost(conn, workspace_id) -> Callable[[int], float]`.
-- **Tests:** repository tests for notes, service tests, `test_weight_off_excluded`, `test_note_order_and_budget`, `test_high_note_boosts_passage`.
+- **Signatures:** `notes.list(ctx, input) -> list[Note]`; `notes.add(ctx, AddNoteInput) -> Note` (user note, kind `interpretation`); `notes.create_agent_note(conn, ctx, *, workspace_id, file_id, author_id, kind, text, citation_ids: list[str], numbers: list[int], question_id, turn_id) -> NoteRow` (enforces section 7.1; fills `notes_fts` and `note_embeddings`); `notes.set_weight(ctx, SetNoteWeightInput) -> None`; `notes.edit(ctx, EditNoteInput) -> Note` (user notes only; a new `note_versions` row; replaces the note's `notes_fts` row and embedding); `notes.delete(ctx, DeleteNoteInput) -> None`; `weights.notes_for_turn(conn, *, workspace_id, file_ids, query) -> list[NoteIn]`; `weights.passage_boost(conn, workspace_id) -> Callable[[int], float]`.
+- **Tests:** repository tests for notes, service tests, `test_weight_off_excluded`, `test_note_order_and_budget`, `test_high_note_boosts_passage`, and the note parts of `test_unusable_file_hidden_from_agents` and `test_reembed_for_new_model`.
 - **Done when:** `uv run pytest tests/unit/services/test_notes.py tests/unit/retrieval`.
 - **Depends on:** B15, B16.
 
 ### B18 Sessions and messages
-- **Goal:** sessions listed latest first and messages stored with citations.
-- **Read:** `02-data-model.md` section 4.7. `03-contract.md` section 2.
+- **Goal:** sessions listed latest first, renamed and soft-deleted, and messages stored with citations.
+- **Read:** `02-data-model.md` sections 4.7 and 7.3 (row for sessions). `03-contract.md` section 2.
 - **Files:** `db/repos/sessions.py`, `services/sessions.py`, tests.
-- **Signatures:** `sessions.list`, `sessions.create`, `sessions.messages(ctx, GetMessagesInput) -> list[ChatMsg]`; `sessions.add_message(conn, ctx, *, workspace_id, session_id, role, text, question_id=None, citation_ids: list[str] = [], unverified: list[Unverified] | None = None) -> str`.
+- **Signatures:** `sessions.list`, `sessions.create`, `sessions.rename(ctx, RenameSessionInput) -> Session`, `sessions.delete(ctx, DeleteSessionInput) -> None` (the `conflict` rule for a running question is added in B28), `sessions.messages(ctx, GetMessagesInput) -> list[ChatMsg]`; `sessions.add_message(conn, ctx, *, workspace_id, session_id, role, text, question_id=None, citation_ids: list[str] = [], unverified: list[Unverified] | None = None) -> str`.
 - **Tests:** repository and service tests.
 - **Done when:** `uv run pytest tests/unit/services/test_sessions.py`.
 - **Depends on:** B16.
@@ -200,8 +200,8 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Goal:** every non-streaming operation built so far is reachable over HTTP.
 - **Read:** `03-contract.md` section 3 (binding rule, errors, headers). `01-architecture.md` sections 5, 7, 9.
 - **Files:** `http/app.py`, `http/errors.py`, `http/context.py`, `cli.py` (subcommand `serve`), tests under `tests/integration/`, and the `app` and `client` fixtures.
-- **Signatures:** `build_app(settings: Settings, runtime: AgentRuntime | None = None) -> FastAPI` (a lifespan that migrates, syncs definitions and config, creates the first workspace when none exists, and records `server.started`; one `app.add_api_route("/api/v1" + op.path, endpoint, methods=[op.method], name=op.name)` per `json` and `upload` operation; `GET /api/v1/health`; CORS; optional static files); `context_from_request(request) -> RequestContext`; an exception handler mapping `ServiceError` and validation errors to `ErrorBody`. Each generated endpoint builds the input model by the binding rule and calls the handler with `run_in_threadpool`.
-- **Tests:** `test_every_operation_has_a_route` (stream operations may answer `internal` until B28), `test_workspace_lifecycle`, `test_upload_and_list`, `test_upload_too_large`, `test_upload_traversal_name`, `test_agents_and_notes`, `test_error_shapes`, `test_source_and_client_headers`, `test_list_events_filters`, `test_static_dir`.
+- **Signatures:** `build_app(settings: Settings, runtime: AgentRuntime | None = None, jobs: Jobs | None = None) -> FastAPI` (`jobs` defaults to `ThreadJobs`; a lifespan that migrates, syncs definitions and config, creates the first workspace when none exists, records `server.started`, submits `ingest` for every result of `pending_ingestion`, and submits `reembed` when the configured embedding model has no row yet; one `app.add_api_route("/api/v1" + op.path, endpoint, methods=[op.method], name=op.name)` per `json` and `upload` operation; `GET /api/v1/health`; CORS; optional static files); `context_from_request(request) -> RequestContext`; an exception handler mapping `ServiceError` and validation errors to `ErrorBody`. Each generated endpoint builds the input model by the binding rule and calls the handler with `run_in_threadpool`.
+- **Tests:** `test_every_operation_has_a_route` (stream operations may answer `internal` until B28), `test_workspace_lifecycle`, `test_upload_and_list`, `test_upload_too_large`, `test_upload_traversal_name`, `test_agents_and_notes`, `test_error_shapes`, `test_source_and_client_headers`, `test_list_events_filters`, `test_static_dir`, `test_upload_returns_before_ingestion`, `test_ingestion_resumed_at_start`, `test_reference_file_api`, `test_renames_and_edits`, `test_soft_deletes`.
 - **Done when:** `uv run pytest tests/integration` and `uv run twyf serve` answers `curl localhost:8321/api/v1/health`.
 - **Depends on:** B17, B18, B19.
 
@@ -260,10 +260,10 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 
 ### B26 The engine: from question to settled huddle
 - **Goal:** the engine runs plan, volunteering, pairing, work and review, and emits their events.
-- **Read:** `04-agents.md` sections 3 (validation table), 4, 5.2 and 5.4. `02-data-model.md` sections 4.7 and 4.8. `03-contract.md` sections 2 (numbering of `Citation.n`) and 4.1.
+- **Read:** `04-agents.md` sections 3 (validation table), 4, 5.2 and 5.4. `02-data-model.md` sections 4.7, 4.8 and 7.2 ("The availability check" and the paragraph after it). `03-contract.md` sections 2 (numbering of `Citation.n`) and 4.1.
 - **Files:** `orchestration/engine.py`, `orchestration/inputs.py` (builds each turn's input), `orchestration/validators.py` (the rules of the validation table), `db/repos/questions.py`, `db/repos/huddle.py`, tests under `tests/unit/orchestration/`.
 - **Signatures:** `class Engine: def __init__(self, settings, conn_factory, runner: TurnRunner, retriever: Retriever, broker: EventBroker)`; `async def run(self, ctx: RequestContext, question_id: str) -> None` (a loop: `state, commands = transition(state, event)`, record `question.state_changed`, execute each command, feed the resulting event; stops at a final state). One private method per command. `named(conn, workspace_id, question) -> tuple[list[str], list[str]]`. In this task `RunDraftClaims` feeds `ClaimsDrafted(0)` and the answer is the `nothing_found` text without a chat turn, so a question can run end to end.
-- **Tests:** engine tests with `FakeRuntime` that assert the events and rows for: broadcast to all with two volunteers; a direct call; a follow-up that calls a new translator; the search loop limited to 3; `test_named_files_and_agents`.
+- **Tests:** engine tests with `FakeRuntime` that assert the events and rows for: broadcast to all with two volunteers; a direct call; a follow-up that calls a new translator; the search loop limited to `TWYF_SEARCHES_PER_TURN`; a file that is `missing` at the start is in no turn input; `test_named_files_and_agents`.
 - **Done when:** `uv run pytest tests/unit/orchestration`.
 - **Depends on:** B17, B18, B19, B22, B25.
 
@@ -281,7 +281,7 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Read:** `03-contract.md` sections 4.2 and 5. `01-architecture.md` section 8.
 - **Files:** `services/questions.py`, `http/sse.py`, `http/app.py` (stream routes, engine task registry, recovery in the lifespan), tests.
 - **Signatures:** `questions.start(ctx, AskInput) -> str` (validates, rejects a busy session, stores the user message and the question, records `question.asked` with wire `started`); `questions.cancel(ctx, CancelQuestionInput) -> None`; `questions.recover(conn, ctx) -> int` (marks open questions `interrupted`); `sse.stream(broker, conn_factory, question_id, after: int) -> AsyncIterator[bytes]`; `sse.format(event_id: int, event: AgentEvent) -> bytes`; `class Tasks: start(question_id, coro); cancel(question_id)`.
-- **Tests:** `test_ask_stream_format`, `test_ask_happy_path`, `test_ask_no_files`, `test_ask_nothing_found`, `test_ask_partial_after_round_limit`, `test_ask_mechanical_fail`, `test_ask_busy_session`, `test_cancel`, `test_disconnect_does_not_cancel`, `test_replay`, `test_crash_recovery`, `test_sessions_and_messages`.
+- **Tests:** `test_ask_stream_format`, `test_ask_happy_path`, `test_ask_no_files`, `test_ask_nothing_found`, `test_ask_partial_after_round_limit`, `test_ask_mechanical_fail`, `test_ask_busy_session`, `test_cancel`, `test_disconnect_does_not_cancel`, `test_replay`, `test_crash_recovery`, `test_sessions_and_messages`, `test_delete_conflicts`.
 - **Done when:** `uv run pytest tests/integration`.
 - **Depends on:** B20, B27.
 
@@ -289,16 +289,16 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Goal:** every row of the failure table behaves as written.
 - **Read:** `01-architecture.md` sections 7 and 8. `04-agents.md` section 5.4 (last paragraph) and 9.3 (last paragraph).
 - **Files:** `orchestration/engine.py` and whatever the tests expose, tests.
-- **Tests:** `test_ask_bad_quote_retried`, `test_ask_translator_fails_others_continue`, `test_ask_verifier_unavailable`, `test_concurrent_questions`, `test_weights_reach_agents`, `test_injection_is_inert`.
+- **Tests:** `test_ask_bad_quote_retried`, `test_ask_translator_fails_others_continue`, `test_ask_verifier_unavailable`, `test_concurrent_questions`, `test_weights_reach_agents`, `test_injection_is_inert`, `test_missing_file_left_out_of_question`, `test_file_lost_during_question`, `test_all_files_unusable`.
 - **Done when:** `uv run pytest tests/integration`.
 - **Depends on:** B28.
 
 ### B30 Work outside a question
-- **Goal:** direct chat with a translator, the first read, and image descriptions.
-- **Read:** `04-agents.md` sections 9.4 and 11. `05-retrieval-and-citations.md` section 2 ("Images").
+- **Goal:** direct chat with a translator, the bounded first read, and image descriptions.
+- **Read:** `04-agents.md` sections 9.4 and 11 (including "The first read is bounded"). `09-decisions.md` O14. `05-retrieval-and-citations.md` section 2 ("Images").
 - **Files:** `services/agents.py` (`ask_translator`), `files/first_read.py`, `files/describe.py`, `http/app.py` (background tasks after upload), tests.
-- **Signatures:** `async def ask_translator(ctx, AskTranslatorInput) -> TranslatorReply`; `async def first_read(runner, conn_factory, ctx, file_id: str) -> None`; `async def describe_image(runner, conn_factory, ctx, file_version_id: str) -> None` (skipped unless the runtime has `vision`; stores an extraction of kind `description`, then chunks and embeds it).
-- **Tests:** `test_ask_translator`, `test_first_read`, and a test that an image upload with a vision-capable fake runtime gives a searchable `description` extraction.
+- **Signatures:** `async def ask_translator(ctx, AskTranslatorInput) -> TranslatorReply`; `async def first_read(runner, conn_factory, ctx, file_id: str) -> None` (exactly one turn, given the first `settings.first_read_chunks` chunks, with `chunks_shown` and `chunks_total`; no search, no second turn); `async def describe_image(runner, conn_factory, ctx, file_version_id: str) -> None` (skipped unless the runtime has `vision`; stores an extraction of kind `description`, then chunks and embeds it).
+- **Tests:** `test_ask_translator`, `test_first_read`, `test_long_file_stays_bounded`, and a test that an image upload with a vision-capable fake runtime gives a searchable `description` extraction.
 - **Done when:** `uv run pytest tests/integration`.
 - **Depends on:** B28.
 
@@ -375,7 +375,7 @@ Conventions used in every task: all Python lives under `backend/src/twyf/`, all 
 - **Read:** `07-test-plan.md` section 9. `01-architecture.md` sections 5 and 12.
 - **Files:** `backend/scripts/check_coverage.py`, `.github/workflows/ci.yml` (all four jobs), `README.md` (how to run the backend, the UI against it, the MCP server and a worker harness), `backend/README.md`.
 - **Done when:** `uv run pytest --cov=twyf --cov-branch --cov-report=json --cov-fail-under=90 && uv run python scripts/check_coverage.py`.
-- **Depends on:** B35, B36, F7.
+- **Depends on:** B35, B36, F8.
 
 ---
 
@@ -392,7 +392,7 @@ Run from `frontend/`. Each is done when `npm run build && npm test` passes. Read
 
 ### F2 Mock additions
 - **Goal:** the mock implements the larger interface.
-- **Files:** `src/backend/mock.ts`: `createWorkspace`, `renameWorkspace`, `deleteWorkspace` on an in-memory list that starts with `mine` and the demo workspace (the demo workspace cannot be renamed or deleted); a `started` event first in `genericScript`.
+- **Files:** `src/backend/mock.ts`: `createWorkspace`, `renameWorkspace`, `deleteWorkspace` on an in-memory list that starts with `mine` and the demo workspace (the demo workspace cannot be renamed or deleted); `referenceFile` (adds a file named after the last part of the path, with `path` set); `deleteFile`, `renameAgent`, `deleteAgent`, `editNote` (user notes only), `deleteNote`, `renameSession`, `deleteSession`, each changing the in-memory data; a `started` event first in `genericScript`.
 - **Done when:** `npm run build && npm test`.
 - **Depends on:** F1.
 
@@ -418,21 +418,29 @@ Run from `frontend/`. Each is done when `npm run build && npm test` passes. Read
 - **Done when:** `npm run build && npm test`, and the demo plays in the browser as before for every existing event.
 - **Depends on:** F4.
 
-### F6 The extended demo
+### F6 Files by path, statuses, renames and deletes
+- **Goal:** the UI offers every new operation, with the smallest possible controls.
+- **Read:** `03-contract.md` section 7 (rows Files, Renames and deletes). `02-data-model.md` section 7.3. `src/Panels.tsx`.
+- **Files:** `src/App.tsx` (handlers that call the new `Backend` methods and refresh the lists; a 2-second refresh of the file list while any file has status `processing`; `nameOf` falls back to a note's `authorName`, `fileName` to a citation's `fileName`), `src/Panels.tsx` (explorer: the path field and a status badge; file card: Delete; agent card: Rename and Delete; session rows: Rename and Delete; each note: Delete, and Edit when its author is `user`), `src/styles.css` (status badges).
+- **Rules:** use the browser's `prompt` and `confirm`. No file rename control anywhere. A file whose status is `missing` or `changed` is shown dimmed with that word.
+- **Done when:** `npm run build && npm test`.
+- **Depends on:** F5.
+
+### F7 The extended demo
 - **Goal:** the mock's demo tells the new story and its test checks it.
 - **Read:** `10-demo-scenario.md` sections 2, 3, 4 and 6.
 - **Files:** `src/demo/scenario.ts`, `src/demo/scenario.test.ts`.
 - **Done when:** `npm test`.
-- **Depends on:** F5.
+- **Depends on:** F6.
 
 > **OWNER REVIEW 5.** The owner plays the demo in the browser and looks at the verifier on the stage, the failed round and the answer.
 
-### F7 The demo against the real backend
+### F8 The demo against the real backend
 - **Goal:** the same test file passes against the real server.
 - **Read:** `07-test-plan.md` section 5 (last row). `01-architecture.md` section 12 (job `demo`).
 - **Files:** `src/demo/scenario.test.ts` (backend chosen from `TWYF_TEST_BACKEND_URL`), `.github/workflows/ci.yml` (job `demo`), `backend/scripts/run_demo_server.sh` (fresh data folder, `seed-demo`, then `serve --runtime fake --fake-script ...` with `TWYF_FIRST_READ=false TWYF_EMBEDDER=hash TWYF_PARSER=basic`).
 - **Done when:** with the script running, `TWYF_TEST_BACKEND_URL=http://127.0.0.1:8321 npm test` passes.
-- **Depends on:** F6, B34.
+- **Depends on:** F7, B34.
 
 ---
 
@@ -445,6 +453,6 @@ B01 ─ B02 ─ B07 ─ B08 ─ B09 ─ B10 ─ B11 ─┐
   └─ B24                                       └─ B18, B19 ───────┴─ B20
 B04 ─ B21 ─ B22 ─ B23        B25 (B16, B24)
 B26 (B17 B18 B19 B22 B25) ─ B27 ─ B28 (B20) ─ B29, B30, B31 ─ B33 ─ B35 ─ B38
-B22 ─ B32                    B34 (B29 B30) ─ B36, B37, F7
-F1 ─ F2, F3 ─ F4 ─ F5 ─ F6 ─ F7
+B22 ─ B32                    B34 (B29 B30) ─ B36, B37, F8
+F1 ─ F2, F3 ─ F4 ─ F5 ─ F6 ─ F7 ─ F8
 ```

@@ -123,7 +123,7 @@ class Line(Wire):        agent: str; text: str; citations: list[CitationIn]
 | `verify` | verifier | `verify-claims` | `claims: list[ClaimIn]` | `verdicts: list[VerdictOut]` |
 | `write_answer` | chat | `write-answer` | `question`, `history`, `mode`, `claims: list[{claim_id, text}]`, `unverified: list[{text, reason}]` | `segments: list[{text, claim_ids, new_paragraph: bool}]` |
 | `direct_reply` | translator | `direct-reply`, `cite-passages` | `question`, `passages`, `notes`, `searches_left` | `statements`, `notes`, `searches` |
-| `first_read` | translator | `first-read`, `cite-passages` | `file_name`, `passages` | `summary: NoteOut`, `entities: list[EntityOut]` |
+| `first_read` | translator | `first-read`, `cite-passages` | `file_name`, `passages`, `chunks_shown: int`, `chunks_total: int` | `summary: NoteOut`, `entities: list[EntityOut]` |
 | `describe_image` | translator | `describe-image` | `file_name`, one image attachment | `description: str` |
 
 Claim and verdict shapes are in sections 8 and 9.
@@ -145,6 +145,7 @@ Claim and verdict shapes are in sections 8 and 9.
 
 ## 4. How translators volunteer and how the orchestrator chooses
 
+0. **Usable files only.** At `Start` the engine runs the availability check on every live file of the workspace. Every turn input lists only files that are `ok` and ingested, and only notes about such files. If the question names a file that is `missing` or `changed`, the engine sends a `status` event: "`<name>` is no longer available and was left out."
 1. **Named by the user.** Before `plan`, the engine finds files and agents named in the question: a case-insensitive match of the file name without its extension, or of the agent's name, in the question text. These go into `named_file_ids` and `named_agent_ids`. The validation rules force them to be used. This is the existing UI rule "naming a file puts a translator on it".
 2. **Broadcast.** The orchestrator's `plan` turn chooses whom to ask (`broadcast_to`: all, some or none) and whom to bring in directly (`direct_calls`). It sees each translator's speciality, how many notes it has written and on which files, and every file with its weighted notes.
 3. **Volunteering.** Each translator in `broadcast_to` gets a `volunteer` turn, all at once. It answers yes or no with a reason and the files it would take, judging from its speciality and the notes on the files. A translator whose turn fails is treated as not volunteering.
@@ -205,7 +206,7 @@ From every non-final state: `Cancel` leads to `cancelled`, and `Fatal(code, mess
 
 | From | Event | Guard | To | Commands, in order |
 |---|---|---|---|---|
-| `received` | `Start(ready_files)` | `ready_files == 0` | `writing` | `RunWriteAnswer(mode="no_files")` |
+| `received` | `Start(ready_files)` | `ready_files == 0` (files that are live, ingested and pass the availability check) | `writing` | `RunWriteAnswer(mode="no_files")` |
 | `received` | `Start(ready_files)` | otherwise | `planning` | `StartRound(1, "initial")`, `RunPlan` |
 | `planning` | `PlanDone(to, calls)` | `to` not empty | `broadcasting` | `EmitBroadcast(to)`, `RunVolunteers(to)` |
 | `planning` | `PlanDone(to, calls)` | `to` empty | `assigning` | `RunAssign(volunteers=[], calls)` |
@@ -239,9 +240,9 @@ Any other pair of state and event raises `InvalidTransition`. Every transition i
 
 For each agent in the command, at once:
 
-1. Record `huddle.reading`. Retrieve passages from the agent's assigned files for the question and focus (`05-retrieval-and-citations.md` section 5), and the notes for those files (section 7 there).
+1. Run the availability check on each assigned file (`02-data-model.md` section 7.2). A file that is not `ok` is dropped from the assignment with a `status` event naming it. An agent left with no file skips its turn. Record `huddle.reading`. Retrieve passages from the agent's assigned files for the question and focus (`05-retrieval-and-citations.md` section 5), and the notes for those files (section 7 there). The agent gets `TWYF_PASSAGES_PER_TURN` passages however long the files are. It never receives a whole file.
 2. Run the `work` turn.
-3. If the output has `searches` and searches remain (limit 3 per agent per `RunWork`), run them, add the passages to the input, and run the turn again. This is how a translator "looks into its files as much as needed".
+3. If the output has `searches` and searches remain (limit `TWYF_SEARCHES_PER_TURN` per agent per `RunWork`), run them, add the passages to the input, and run the turn again. This is how a translator "looks into its files as much as needed".
 4. For each statement: create its citations, store the statement, record `huddle.statement`. For each note: store it, record `note.created`. For each entity: section 9 of `05-retrieval-and-citations.md`.
 
 When all agents are done, the engine feeds `WorkDone`. An agent whose turn fails after retries leaves the huddle (`leave` event, reason `failed`) and the others continue. If every agent fails, the engine feeds `Fatal("huddle_failed", ...)`.
@@ -338,7 +339,7 @@ class TurnOffer(Wire):
 
 **`CommandRuntime`** (`runtime/command.py`): runs `TWYF_COMMAND` as a subprocess with `asyncio.create_subprocess_exec`, in an empty temporary working directory, writing one prompt to standard input: the system prompt, the instructions, the input as JSON, the output schema, and "Reply with one JSON object and nothing else." It reads standard output. If that parses as a JSON object with a string field `result`, the output is the JSON object found inside `result` (code fences stripped) and `usage` is read from fields `usage.input_tokens`, `usage.output_tokens` and `model` when present. Otherwise standard output itself must be the JSON object. Any other harness with a headless mode works by changing `TWYF_COMMAND`.
 
-**`ApiRuntime`** is not built. It would implement the same protocol with a provider SDK and structured output. Nothing else would change.
+**A direct model API runtime is not part of version 1. Do not build it.** It would later implement the same protocol with a provider SDK and structured output, and nothing else would change.
 
 `describe_image` is only run when the runtime's `capabilities` contains `vision`. `FakeRuntime` and `QueueRuntime` declare it. `CommandRuntime` does not.
 
@@ -467,8 +468,16 @@ After the last retry fails, the answer is built without the chat agent: the veri
 
 | Trigger | What runs |
 |---|---|
-| A file finishes ingestion and `TWYF_FIRST_READ` is true | The generic translator with the fewest notes gets an assignment (purpose `first_read`) and a `first_read` turn over the file's first 12 chunks. Its summary note and entities are stored. This is the "earlier read" the demo's summary notes come from |
+| A file finishes ingestion and `TWYF_FIRST_READ` is true | The generic translator with the fewest notes gets an assignment (purpose `first_read`) and one `first_read` turn. Its summary note and entities are stored. This is the "earlier read" the demo's summary notes come from. See "The first read is bounded" below |
 | An image file is ingested and the runtime has `vision` | A `describe_image` turn. Its text is stored as an extraction of kind `description` (`05-retrieval-and-citations.md` section 2) |
 | `ask_translator` | An assignment (purpose `direct`) for each file retrieval touches, then a `direct_reply` turn with the search loop of section 5.4. The reply text is the statements joined by spaces |
 
 These run as background tasks of the server and are recorded like any other turn.
+
+### The first read is bounded
+
+The first read is one turn, with no question behind it. It is given the first `TWYF_FIRST_READ_CHUNKS` chunks of the file (12 by default, about 14,000 characters) and nothing more, whether the file has two pages or five thousand. It never runs a search and is never repeated for the rest of the file. Its input carries `chunks_shown` and `chunks_total`, and the `first-read` skill tells the translator: when `chunks_shown` is less than `chunks_total`, begin the summary with "From the opening of the file:" and describe only what the passages show.
+
+Its purpose is to give the orchestrator and the translators a first idea of what each file is about, so they can decide who should look at it. The rest of a long file is reached only when a question is asked: search by vectors and keywords picks the passages closest to that question, and the translator reads those and cites from them (section 5.4).
+
+With `TWYF_FIRST_READ=false` no first read happens and files have no summary note until a question produces notes about them.

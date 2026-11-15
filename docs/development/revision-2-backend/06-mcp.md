@@ -49,7 +49,7 @@ A failed request raises an MCP tool error whose message is `<code>: <message>` f
 
 | Tool | Difference |
 |---|---|
-| `upload_file` | Input is `ws` plus either `path` (a file on the machine where the MCP server runs) or `name` and `content_base64`. The MCP server reads the bytes and sends the multipart upload. `path` must be a regular file and within the size limit |
+| `upload_file` | Input is `ws` plus either `path` (a file on the machine where the MCP server runs) or `name` and `content_base64`. The MCP server reads the bytes and sends the multipart upload, so the app keeps its own copy. `path` must be a regular file and within the size limit. To add a file without copying it, a client uses the plain tool `reference_file(ws, path)` instead, where `path` is on the machine the API server runs on |
 | `ask` | Extra input `wait: bool = True`. With `wait` true the tool reads the event stream to its end, reports each event as progress (`ctx.report_progress`, message = a one-line description of the event), and returns `{question_id, outcome: "answer" \| "error" \| "cancelled", answer?: {text, citations, unverified}, error?, events}`. With `wait` false it returns `{question_id}` as soon as the `started` event arrives |
 | `get_question_events` | Sends `Accept: application/json`, for which the API returns `{events: [...], last_id, done: bool}` at once instead of a stream. Called repeatedly with `after = last_id` to follow a question |
 

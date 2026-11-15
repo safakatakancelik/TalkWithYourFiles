@@ -16,12 +16,14 @@ Part of the revision 2 backend plan. The schema below is complete. Migration `00
 | Entity | Technique | Detail |
 |---|---|---|
 | Workspace name | Type 2 | `workspace_versions` |
-| File name, content | Type 2 | `file_versions`. A new upload of different content under the same name is a new version |
+| File content and location | Type 2 | `file_versions`. New content under the same name is a new version. A file's name is its original name and cannot be changed |
+| File availability | Type 2 | `file_availability`: `ok`, `missing` or `changed` over time |
 | Agent name, speciality, definition | Type 2 | `agent_versions` |
 | Session title | Type 2 | `session_versions` |
+| Note text | Type 2 | `note_versions`. Only a note written by the user can be edited |
 | Note weight | Type 2 | `note_weights` |
 | Agent definition, skill, config | Type 2, keyed by content hash | `agent_definition_versions`, `skill_versions`, `config_versions` |
-| Note text, citation, message, claim, verdict, turn, assignment, extraction, blob | Type 0 (immutable) | Written once. A correction is a new row |
+| Citation, message, claim, verdict, turn, assignment, extraction | Type 0 (immutable) | Written once. A correction is a new row |
 | Question state, turn state | Type 1 on the row, with every change in `app_events` | The row shows the current state. History is in the log |
 | Lookup tables | Type 1 | Codes are never removed |
 
@@ -67,6 +69,8 @@ CREATE TABLE agent_kinds    (code TEXT PRIMARY KEY, description TEXT NOT NULL, c
 CREATE TABLE note_kinds     (code TEXT PRIMARY KEY, description TEXT NOT NULL, needs_citation INTEGER NOT NULL);
 CREATE TABLE weights        (code TEXT PRIMARY KEY, rank INTEGER NOT NULL UNIQUE, factor REAL NOT NULL);
 CREATE TABLE file_types     (code TEXT PRIMARY KEY, description TEXT NOT NULL);
+CREATE TABLE location_kinds (code TEXT PRIMARY KEY, description TEXT NOT NULL);
+CREATE TABLE availability_states (code TEXT PRIMARY KEY, usable INTEGER NOT NULL);
 CREATE TABLE extraction_kinds (code TEXT PRIMARY KEY, description TEXT NOT NULL);
 CREATE TABLE claim_kinds    (code TEXT PRIMARY KEY, description TEXT NOT NULL);
 CREATE TABLE verdict_kinds  (code TEXT PRIMARY KEY, description TEXT NOT NULL, passes INTEGER NOT NULL);
@@ -109,12 +113,7 @@ CREATE TABLE actors (
 ### 4.3 Files
 
 ```sql
-CREATE TABLE blobs (
-  sha256 TEXT PRIMARY KEY,
-  size_bytes INTEGER NOT NULL,
-  stored_path TEXT NOT NULL,                -- relative to the data dir: blobs/ab/abcdef...
-  created_at TEXT NOT NULL);
-
+-- The app refers to files. It never changes or removes the bytes it refers to. See section 7.2.
 CREATE TABLE files (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id),
@@ -127,15 +126,26 @@ CREATE TABLE file_versions (
   file_id TEXT NOT NULL REFERENCES files(id),
   workspace_id TEXT NOT NULL REFERENCES workspaces(id),
   version INTEGER NOT NULL,
-  blob_sha256 TEXT NOT NULL REFERENCES blobs(sha256),
-  name TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,             -- the identity of the content
+  name TEXT NOT NULL,                       -- the original file name. Never changed
   file_type TEXT NOT NULL REFERENCES file_types(code),
   size_bytes INTEGER NOT NULL,
+  location_kind TEXT NOT NULL REFERENCES location_kinds(code),   -- store | path | remote
+  location TEXT NOT NULL,                   -- store: files/ab/abcdef... under the data dir. path: an absolute path
+  mtime_ns INTEGER NOT NULL,                -- modification time seen when the hash was last confirmed
   valid_from TEXT NOT NULL,
   valid_to TEXT,
   UNIQUE (file_id, version));
 CREATE UNIQUE INDEX file_versions_current ON file_versions(file_id) WHERE valid_to IS NULL;
-CREATE INDEX file_versions_lookup ON file_versions(workspace_id, name, blob_sha256);
+CREATE INDEX file_versions_lookup ON file_versions(workspace_id, name, content_sha256);
+
+CREATE TABLE file_availability (
+  id INTEGER PRIMARY KEY,
+  file_version_id TEXT NOT NULL REFERENCES file_versions(id),
+  state TEXT NOT NULL REFERENCES availability_states(code),      -- ok | missing | changed
+  valid_from TEXT NOT NULL,
+  valid_to TEXT);
+CREATE UNIQUE INDEX file_availability_current ON file_availability(file_version_id) WHERE valid_to IS NULL;
 
 CREATE TABLE extractions (
   id TEXT PRIMARY KEY,
@@ -303,13 +313,22 @@ CREATE TABLE notes (
   file_version_id TEXT NOT NULL REFERENCES file_versions(id),
   author_id TEXT NOT NULL REFERENCES actors(id),
   kind TEXT NOT NULL REFERENCES note_kinds(code),
-  text TEXT NOT NULL,
   question_id TEXT,
   turn_id TEXT,
   created_at TEXT NOT NULL,
   deleted_at TEXT);
 CREATE INDEX notes_file ON notes(workspace_id, file_id);
 CREATE INDEX notes_author ON notes(workspace_id, author_id);
+
+CREATE TABLE note_versions (                -- the text. An agent's note has exactly one version
+  id INTEGER PRIMARY KEY,
+  note_id TEXT NOT NULL REFERENCES notes(id),
+  version INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  valid_from TEXT NOT NULL,
+  valid_to TEXT,
+  UNIQUE (note_id, version));
+CREATE UNIQUE INDEX note_versions_current ON note_versions(note_id) WHERE valid_to IS NULL;
 
 CREATE TABLE note_citations (
   note_id TEXT NOT NULL REFERENCES notes(id),
@@ -326,7 +345,8 @@ CREATE TABLE note_weights (
   valid_to TEXT);
 CREATE UNIQUE INDEX note_weights_current ON note_weights(note_id) WHERE valid_to IS NULL;
 
-CREATE VIRTUAL TABLE notes_fts USING fts5(text, content='notes', content_rowid='rowid', tokenize='unicode61');
+-- A cache of each note's current text. The service layer replaces a note's row when its text changes.
+CREATE VIRTUAL TABLE notes_fts USING fts5(note_id UNINDEXED, text, tokenize='unicode61');
 
 CREATE TABLE note_embeddings (
   note_id TEXT NOT NULL REFERENCES notes(id),
@@ -616,9 +636,15 @@ CREATE VIEW v_workspaces AS
 
 CREATE VIEW v_files AS
   SELECT f.id, f.workspace_id, v.id AS file_version_id, v.version, v.name, v.file_type,
-         v.size_bytes, v.blob_sha256, f.created_at
-  FROM files f JOIN file_versions v ON v.file_id = f.id AND v.valid_to IS NULL
+         v.size_bytes, v.content_sha256, v.location_kind, v.location, v.mtime_ns,
+         a.state AS availability, f.created_at
+  FROM files f
+  JOIN file_versions v ON v.file_id = f.id AND v.valid_to IS NULL
+  JOIN file_availability a ON a.file_version_id = v.id AND a.valid_to IS NULL
   WHERE f.deleted_at IS NULL;
+
+-- Files that agents may work on: live, and their content is where it should be.
+CREATE VIEW v_usable_files AS SELECT * FROM v_files WHERE availability = 'ok';
 
 CREATE VIEW v_agents AS
   SELECT a.id, a.workspace_id, a.agent_kind, v.id AS agent_version_id, v.name, v.specialty,
@@ -633,8 +659,11 @@ CREATE VIEW v_sessions AS
   WHERE s.deleted_at IS NULL;
 
 CREATE VIEW v_notes AS
-  SELECT n.id, n.workspace_id, n.file_id, n.author_id, n.kind, n.text, n.created_at, w.weight
-  FROM notes n JOIN note_weights w ON w.note_id = n.id AND w.valid_to IS NULL
+  SELECT n.id, n.workspace_id, n.file_id, n.author_id, n.kind, t.text, n.created_at, w.weight
+  FROM notes n
+  JOIN note_versions t ON t.note_id = n.id AND t.valid_to IS NULL
+  JOIN note_weights w ON w.note_id = n.id AND w.valid_to IS NULL
+  JOIN files f ON f.id = n.file_id AND f.deleted_at IS NULL
   WHERE n.deleted_at IS NULL;
 ```
 
@@ -649,15 +678,23 @@ CREATE VIEW v_notes AS
 | `skill.loaded` | versioning | A new skill version is snapshotted | |
 | `config.changed` | versioning | A new config version is snapshotted | |
 | `workspace.created` / `.renamed` / `.deleted` | workspace | The matching operation | |
-| `file.uploaded` | file | A new file is stored | |
+| `file.uploaded` | file | A new file arrives as bytes and is kept in the app's store | |
+| `file.referenced` | file | A new file is added by its path, with no copy | |
 | `file.version_added` | file | Different content arrives under an existing name | |
 | `file.upload_duplicate` | file | The same name and content arrive again | |
+| `file.ingest_started` | file | The background job starts on a file version | |
 | `file.extraction_completed` / `.extraction_failed` | file | A parser finishes | |
 | `file.indexed` | file | Chunks and embeddings are written | |
+| `file.missing` | file | The content is no longer at its location | |
+| `file.changed` | file | The content at the location has a different hash | |
+| `file.restored` | file | A missing or changed file is found again with the recorded hash | |
+| `file.deleted` | file | `delete_file` | |
 | `agent.created` | agent | An agent row is created, by a user or with a workspace | |
+| `agent.renamed` / `agent.deleted` | agent | The matching operation | |
 | `note.created` | note | Any note, by anyone | `note` when inside a question |
+| `note.edited` / `note.deleted` | note | The matching operation | |
 | `note.weight_set` | note | One event per note whose weight changes | |
-| `session.created` | session | | |
+| `session.created` / `.renamed` / `.deleted` | session | The matching operation | |
 | `message.created` | session | A user or assistant message is stored | |
 | `question.asked` | question | `ask` is called | `started` |
 | `question.status` | question | A progress line for the UI | `status` |
@@ -696,6 +733,8 @@ INSERT INTO agent_kinds VALUES ('translator','Reads files',1),('verifier','Check
 INSERT INTO note_kinds VALUES ('summary','What a file says',1),('finding','A fact found in a file',1),('interpretation','Subjective guidance or reasoning',0);
 INSERT INTO weights VALUES ('off',0,0.0),('low',1,0.5),('normal',2,1.0),('high',3,2.0);
 INSERT INTO file_types VALUES ('pdf','PDF'),('docx','Word'),('csv','CSV'),('md','Markdown'),('txt','Text'),('image','Image'),('other','Other');
+INSERT INTO location_kinds VALUES ('store','Bytes kept in the app''s data folder'),('path','A file on this machine, referred to by path'),('remote','A file on another server. Reserved, not used in version 1');
+INSERT INTO availability_states VALUES ('ok',1),('missing',0),('changed',0);
 INSERT INTO extraction_kinds VALUES ('text','Text taken from the file'),('ocr','Text read from pixels'),('description','A model''s description of an image');
 INSERT INTO claim_kinds VALUES ('quoted','Stated by the cited passages'),('derived','Computed or inferred from other claims');
 INSERT INTO verdict_kinds VALUES ('supported','Fully supported',1),('partly_supported','Only part is supported',0),('unsupported','Not supported',0),('mechanical_fail','Failed a mechanical check',0);
@@ -718,28 +757,63 @@ At first start, when no workspace exists, the server creates one named "My works
 - A note of kind `summary` or `finding` written by an agent must have at least one citation, and every citation must point into the note's own file. Otherwise `ValidationError`.
 - A note of kind `interpretation` needs no citation. It is guidance, never evidence. Notes written by the user are always `interpretation`.
 - A citation row is only ever inserted by `citations.locate.create_citation`, which runs the mechanical check first (`05-retrieval-and-citations.md` section 6). There is no other insert path.
-- A new note gets a `note_weights` row with weight `normal`.
+- A new note gets a `note_versions` row (version 1) and a `note_weights` row with weight `normal`.
 
-### 7.2 Files: identity, duplicates, re-uploads
+### 7.2 Files: the app refers to files and does not own them
 
-On upload, compute the SHA-256 of the bytes while streaming to a temporary file, then:
+A file row is a reference: a name, a content hash and a location. The user owns the bytes. The app never changes them and never removes them, in any location, for any reason.
+
+**Two ways a file arrives**
+
+| Operation | `location_kind` | What happens to the bytes |
+|---|---|---|
+| `upload_file` (bytes sent by a browser or client) | `store` | Streamed to a temporary file while the SHA-256 is computed, then moved to `files/<first two hex>/<sha256>` in the data folder. If that file already exists the temporary file is discarded. A browser cannot give a path, so this is the only way an upload can be referred to later |
+| `reference_file` (an absolute path on the machine the server runs on) | `path` | Read in place to compute the SHA-256. Nothing is copied |
+
+`remote` is reserved for files on other servers. A remote location will need the same three facts (name, hash, location) and the same check below.
+
+The file's name is the original name: the uploaded file name, or the last part of the path. It cannot be changed.
+
+**Identity and versions.** After the hash is known:
 
 | Case | Result | Event |
 |---|---|---|
-| Blob not seen before | Move the temporary file to `blobs/<aa>/<sha256>`, insert `blobs` | |
-| Blob already stored | Delete the temporary file. The existing blob is shared | |
-| A live file in this workspace has the same name and the same blob | Nothing new. Return the existing file | `file.upload_duplicate` |
-| A live file in this workspace has the same name and a different blob | Close its current version, insert a new `file_versions` row with `version` + 1, ingest it | `file.version_added` |
-| Otherwise | Insert `files` and `file_versions` version 1, ingest it | `file.uploaded` |
+| A live file in this workspace has the same name and the same hash | Nothing new. Return the existing file | `file.upload_duplicate` |
+| A live file in this workspace has the same name and a different hash | Close its current version, insert `file_versions` with `version` + 1 and a `file_availability` row `ok`, ingest it | `file.version_added` |
+| Otherwise | Insert `files`, `file_versions` version 1 and `file_availability` `ok`, ingest it | `file.uploaded` or `file.referenced` |
 
-Notes and citations keep pointing at the `file_version_id` they were written against. A citation is always checked against its own extraction, so it stays valid after a newer version arrives. The same content under a different name is a separate file sharing one blob.
+The same content under a different name is a separate file.
 
-### 7.3 Delete
+**The availability check.** `files/integrity.py::verify(conn, ctx, file_version_id) -> str` returns `ok`, `missing` or `changed`:
 
-- `delete_workspace` sets `workspaces.deleted_at`. Its rows remain. It disappears from every listing, and every operation on it returns `not_found`. Running questions in it are cancelled first.
-- No other delete operation exists in version 1. The `deleted_at` columns on files, agents, notes, sessions and entities are there so those operations can be added without a schema change.
-- Blobs are never removed, even when no live file refers to them.
-- A true erase for privacy is an open question (`09-decisions.md` section 3).
+1. If nothing exists at the location, or it is not a regular file: `missing`.
+2. If its size and modification time equal `size_bytes` and `mtime_ns`: `ok`, with no hashing.
+3. Otherwise compute its SHA-256. If it equals `content_sha256`: `ok`, and `mtime_ns` is updated. If not: `changed`.
+
+When the result differs from the current `file_availability` row, that row is closed, a new one is inserted, and `file.missing`, `file.changed` or `file.restored` is recorded.
+
+`verify` runs: when files are listed; at the start of every question, for every live file of the workspace; just before a file is given to a translator; before a direct chat or a first read; and before ingestion.
+
+**A file that is not `ok` is not worked on.** It is absent from `v_usable_files`, so it is not searched, not offered to the orchestrator and not assigned, and notes about it are not given to agents. It stays listed for the user with status `missing` or `changed`. Its notes, citations and past answers stay readable, because the extracted text they point into is in the database. If a question names such a file, or a file becomes unusable while a question runs, the stream carries a `status` event that says so, and the huddle continues without it.
+
+A `changed` file is never re-read on its own. The user adds it again, which makes a new version by the table above.
+
+Notes and citations keep pointing at the `file_version_id` they were written against, so they stay valid after a newer version arrives.
+
+### 7.3 Delete, rename and edit
+
+Every delete is soft: it sets `deleted_at` and records an event. No row and no file content is ever removed. A deleted thing disappears from every listing, and operations on it return `not_found`.
+
+| Operation | Rules |
+|---|---|
+| `delete_workspace` | Running questions in it are cancelled first. All its rows remain |
+| `delete_file` | Its notes are hidden with it (`v_notes`). Citations in stored messages still show, with the file's name. The content at its location is not touched |
+| `rename_agent`, `delete_agent` | Translators only: the orchestrator, verifier and chat agent return `validation`. Returns `conflict` while the agent is in a running huddle. A deleted agent's notes stay, shown with its last name |
+| `edit_note` | Only a note whose author is the user. A new `note_versions` row. An agent's note returns `validation`: its text is tied to its citations |
+| `delete_note` | Any note |
+| `rename_session`, `delete_session` | Deleting returns `conflict` while the session has a running question |
+
+Files have no rename. Renames and edits are type 2 changes, so every earlier value is kept.
 
 ### 7.4 Versioning of `.agents`
 

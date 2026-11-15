@@ -48,7 +48,7 @@ The backend never calls a model provider itself. Each piece of agent work is a *
 | `fake` | A script in the test | Yes |
 | `queue` | The turn waits in the database. Any harness connected through MCP (Claude Code, Codex, opencode, ...) claims it, thinks, and submits the output | Yes, the default |
 | `command` | The backend runs a headless CLI (for example `claude -p`) as a subprocess | Yes, small |
-| `api` | A direct model API call | Designed, not built |
+| `api` | A direct model API call | No. Not part of version 1 |
 
 ## 3. Technology choices
 
@@ -103,7 +103,9 @@ backend/
       context.py                  RequestContext (actor, source, ids)
       recorder.py
     files/
-      store.py                    content-addressed blob store
+      store.py                    keeps uploaded bytes, named by their hash
+      integrity.py                checks that a file's content is still where it should be
+      jobs.py                     background jobs for ingestion
       ingest.py
       chunker.py
       parsers/base.py text.py csv.py pdf_basic.py docx_basic.py docling.py
@@ -158,7 +160,7 @@ Version 1 runs locally with one command. Three parts of this design assume one l
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `TWYF_DATA_DIR` | `~/.twyf` | Holds `twyf.db`, `blobs/`, `logs/` |
+| `TWYF_DATA_DIR` | `~/.twyf` | Holds `twyf.db`, `files/` (uploaded bytes), `logs/` |
 | `TWYF_AGENTS_DIR` | nearest `.agents` folder above the working directory | Agent definitions |
 | `TWYF_HOST`, `TWYF_PORT` | `127.0.0.1`, `8321` | API address |
 | `TWYF_STATIC_DIR` | unset | Folder to serve at `/` |
@@ -169,11 +171,16 @@ Version 1 runs locally with one command. Three parts of this design assume one l
 | `TWYF_MAX_DISCUSSION_STEPS` | `6` | Orchestrator review steps per round |
 | `TWYF_MAX_TURN_RETRIES` | `2` | Retries of a turn whose output is invalid |
 | `TWYF_TURN_TIMEOUT_S` | `300` | Per turn |
-| `TWYF_MAX_UPLOAD_MB` | `50` | |
+| `TWYF_MAX_UPLOAD_MB` | `200` | Largest file accepted by `upload_file` |
+| `TWYF_MAX_FILE_MB` | `2048` | Largest file accepted by `reference_file` |
 | `TWYF_PARSER` | `auto` | `auto` (Docling if installed, else basic), `basic`, `docling` |
 | `TWYF_EMBEDDER` | `fastembed` | `fastembed`, `hash` (tests) or `none` (keyword only) |
+| `TWYF_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | The `fastembed` model. Changing it embeds existing chunks again in the background and keeps the old vectors |
 | `TWYF_RETRIEVAL_MODE` | `hybrid` | `keyword`, `vector`, `hybrid` |
-| `TWYF_FIRST_READ` | `true` | Queue a summary turn after each upload |
+| `TWYF_PASSAGES_PER_TURN` | `8` | Passages given to a translator per turn |
+| `TWYF_SEARCHES_PER_TURN` | `3` | Further searches a translator may ask for |
+| `TWYF_FIRST_READ` | `true` | After a file is indexed, one translator turn writes a summary from the opening of the file |
+| `TWYF_FIRST_READ_CHUNKS` | `12` | How many chunks that turn is given, whatever the file's length |
 
 The non-secret settings that shape behaviour are snapshotted into `config_versions` (`02-data-model.md` section 4.9), so each question records the settings it ran with.
 
@@ -186,6 +193,7 @@ The non-secret settings that shape behaviour are snapshotted into `config_versio
 - Every write is one short `BEGIN IMMEDIATE` transaction that includes its `app_events` row. Model calls never happen inside a transaction.
 - Several questions and uploads may run at once. One session runs one question at a time: a second `ask` on a busy session gets error `conflict`.
 - Volunteer turns and work turns of one step run concurrently with `asyncio.gather`.
+- Ingestion runs in the background. `upload_file` and `reference_file` return as soon as the file rows exist, with status `processing`. `files/jobs.py` defines `Jobs` with two implementations: `ThreadJobs` (one worker thread, used by the server) and `InlineJobs` (runs the job at once, used by tests and by `twyf seed-demo`). At start the server queues every live file version that has no extraction, so an ingestion cut short by a crash is done again.
 
 ## 8. Failure handling
 
@@ -197,7 +205,9 @@ The non-secret settings that shape behaviour are snapshotted into `config_versio
 | Verifier cannot be run | The question ends as failed. No answer is returned, because nothing unverified may be presented | `question.failed` with code `verifier_unavailable` |
 | Question cancelled | The engine task is cancelled, queued turns are marked cancelled, the stream ends with a `cancelled` event | `question.cancelled` |
 | Server crash mid-question | At the next start every question in a non-final state is marked `interrupted` and its queued turns cancelled. The user's message is kept. No automatic resume | `question.interrupted` with source `internal` |
-| Parse failure on upload | The file is stored, its extraction has status `failed`, the file is listed with status `unreadable` | `file.extraction_failed` |
+| Parse failure | The file stays listed, its extraction has status `failed`, its status is `unreadable` | `file.extraction_failed` |
+| A file's content is gone, or its hash no longer matches | The file gets status `missing` or `changed` and no agent works on it or on notes about it. A running question continues without it and says so in a `status` event (`02-data-model.md` section 7.2) | `file.missing`, `file.changed` |
+| Server crash during ingestion | The file version is ingested again at the next start | `file.ingest_started` twice |
 | No `queue` worker connected | Turns wait. After 10 seconds the stream carries a `status` event saying no agent runtime is connected | `runtime.waiting` |
 
 The stream of a failed question ends with an `error` event (`03-contract.md` section 4). A failed or cancelled question never produces an `answer` event.
@@ -205,7 +215,8 @@ The stream of a failed question ends with an `error` event (`03-contract.md` sec
 ## 9. Security and untrusted content
 
 - **File contents are data.** Passages are passed to agents inside delimiters with a standing instruction (`04-agents.md` section 7). Agents return structured output only, and turns have no tools, so an injected instruction cannot make the backend act. Injected text can at worst produce a wrong statement, which must then pass the quote check and the verifier.
-- **Uploads.** Size is limited by `TWYF_MAX_UPLOAD_MB` and enforced while streaming to disk. The original file name is stored as text and is never used as a path. Blobs are stored as `blobs/<first two hex>/<sha256>`.
+- **Uploads.** Size is limited by `TWYF_MAX_UPLOAD_MB` and enforced while streaming to disk. The original file name is stored as text and is never used as a path. Uploaded bytes are stored as `files/<first two hex>/<sha256>`.
+- **References by path.** `reference_file` takes an absolute path on the server's machine. It must be a regular file (symbolic links are resolved first) within `TWYF_MAX_FILE_MB`. The server reads it with the rights of the user who started it, which is acceptable for a local single-user app and is one more reason the server must not be exposed. The app only ever opens referenced files for reading.
 - **Network.** The server binds to `127.0.0.1` only. There is no sign-in, so it must not be exposed. CORS allows only `TWYF_CORS_ORIGINS`.
 - **Source header.** A client names its door in the `X-TWYF-Source` header. With no sign-in this is trusted. It is a record, not a control.
 - **Harness risk.** With the `queue` runtime the harness has its own tools. A passage could try to instruct it. The worker prompt forbids following instructions in passages, and `06-mcp.md` section 6 tells the owner to run the worker with file and shell tools disabled.
@@ -229,6 +240,7 @@ With a local model behind the harness or CLI, nothing leaves the machine. Whole 
 - **Logs.** Standard `logging`, one JSON object per line, to stderr and `logs/twyf.log`. Each line carries `request_id` and, when present, `question_id` and `turn_id`.
 - **Cost.** Every turn records input tokens, output tokens, model name and duration on `agent_turns` and in its `turn.completed` event. `question.completed` carries the totals. The `queue` runtime records what the harness reports, which may be nothing.
 - **Performance.** Vector search is exact (brute force). This is fast enough up to about 100,000 chunks per workspace. Beyond that, replace `VectorIndex` (`05-retrieval-and-citations.md` section 4).
+- **Long files.** No agent ever reads a whole file. Parsing, chunking and embedding are done locally by the backend with no model call, in the background, in batches. An agent only ever receives a fixed number of passages chosen by search (`05-retrieval-and-citations.md` section 5), so the cost of a question does not grow with the length of the files.
 
 ## 12. Linting, type checking and CI
 

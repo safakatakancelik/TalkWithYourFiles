@@ -59,10 +59,10 @@ Python models in `contract/models.py`. Each has the same name and fields as the 
 | Model | Fields |
 |---|---|
 | `Workspace` | `id`, `name` |
-| `FileItem` | `id`, `name`, `type: FileType`, `size_kb: int`, `uploaded_at`, `status?: 'processing' \| 'ready' \| 'unreadable'`, `version?: int` |
+| `FileItem` | `id`, `name`, `type: FileType`, `size_kb: int`, `uploaded_at`, `status?: 'processing' \| 'ready' \| 'unreadable' \| 'missing' \| 'changed'`, `version?: int`, `path?: str` (set for a file added by path) |
 | `Agent` | `id`, `name`, `specialty` |
-| `Citation` | `n: int`, `file_id`, `agent_id`, `location`, `passage`, `quote`, `id?`, `extraction_id?`, `start?: int`, `end?: int`, `page?: int` |
-| `Note` | `id`, `file_id`, `author_id`, `kind: 'summary' \| 'interpretation' \| 'finding'`, `text`, `citations: list[Citation]`, `created_at`, `weight: Weight` |
+| `Citation` | `n: int`, `file_id`, `agent_id`, `location`, `passage`, `quote`, `id?`, `extraction_id?`, `start?: int`, `end?: int`, `page?: int`, `file_name?` |
+| `Note` | `id`, `file_id`, `author_id`, `kind: 'summary' \| 'interpretation' \| 'finding'`, `text`, `citations: list[Citation]`, `created_at`, `weight: Weight`, `author_name?` |
 | `Session` | `id`, `title`, `updated_at`, `message_count: int` |
 | `Unverified` | `text`, `reason` |
 | `ChatMsg` | `id`, `role: 'user' \| 'assistant'`, `text`, `citations?`, `pending?`, `status?`, `placeholder?`, `unverified?: list[Unverified]`, `error?: str` |
@@ -80,7 +80,8 @@ Mapping rules between the database and the wire:
 - `Note.author_id` and `Citation.agent_id` and `say.agent_id`: the workspace's orchestrator agent is sent as the constant `orchestrator`, its verifier as `verifier`, the user as `user`. Any other actor is sent as its id.
 - `list_agents` returns translators only. The orchestrator, verifier and chat agent are never in the list.
 - `FileItem.size_kb = max(1, round(size_bytes / 1024))`. `uploaded_at` is the creation time of the current file version.
-- `FileItem.status`: `processing` until ingestion ends, then `ready`, or `unreadable` when no extraction succeeded.
+- `FileItem.status`: `missing` or `changed` when the availability check says so (`02-data-model.md` section 7.2). Otherwise `processing` until ingestion ends, then `ready`, or `unreadable` when no extraction succeeded.
+- The real backend always fills `Note.author_name` and `Citation.file_name`, so a note by a deleted agent and a citation into a deleted file can still be shown.
 - `Citation.n` is unique within the list that carries it. Inside a question every distinct citation gets a number in order of creation, and `say`, `note` and `verify` events use that number. The `answer` event and stored messages renumber from 1 in order of first appearance in the text. Notes written outside a question number from 1.
 - `Citation.passage` always contains `Citation.quote`.
 
@@ -111,14 +112,22 @@ Binding rule: an input field whose name appears in `path` comes from the path. F
 | `delete_workspace` | DELETE `/workspaces/{ws}` | | none | `deleteWorkspace` |
 | `list_files` | GET `/workspaces/{ws}/files` | | `list[FileItem]` | `listFiles` |
 | `upload_file` | POST `/workspaces/{ws}/files` (upload) | the file part | `FileItem` | `uploadFile` |
+| `reference_file` | POST `/workspaces/{ws}/files/reference` | `path` | `FileItem` | `referenceFile` |
+| `delete_file` | DELETE `/workspaces/{ws}/files/{file_id}` | | none | `deleteFile` |
 | `get_file_text` | GET `/workspaces/{ws}/files/{file_id}/text` | `start?`, `end?` | `{text, start, end, total}` | |
 | `list_agents` | GET `/workspaces/{ws}/agents` | | `list[Agent]` | `listAgents` |
 | `create_agent` | POST `/workspaces/{ws}/agents` | `name`, `specialty` | `Agent` | `createAgent` |
+| `rename_agent` | PATCH `/workspaces/{ws}/agents/{agent_id}` | `name` | `Agent` | `renameAgent` |
+| `delete_agent` | DELETE `/workspaces/{ws}/agents/{agent_id}` | | none | `deleteAgent` |
 | `list_notes` | GET `/workspaces/{ws}/notes` | | `list[Note]` | `listNotes` |
 | `add_note` | POST `/workspaces/{ws}/notes` | `file_id`, `text` | `Note` | `addNote` |
+| `edit_note` | PATCH `/workspaces/{ws}/notes/{note_id}` | `text` | `Note` | `editNote` |
+| `delete_note` | DELETE `/workspaces/{ws}/notes/{note_id}` | | none | `deleteNote` |
 | `set_note_weight` | POST `/workspaces/{ws}/notes/weight` | `note_ids`, `weight` | none | `setNoteWeight` |
 | `list_sessions` | GET `/workspaces/{ws}/sessions` | | `list[Session]`, latest first | `listSessions` |
 | `create_session` | POST `/workspaces/{ws}/sessions` | `title` | `Session` | `createSession` |
+| `rename_session` | PATCH `/workspaces/{ws}/sessions/{session_id}` | `title` | `Session` | `renameSession` |
+| `delete_session` | DELETE `/workspaces/{ws}/sessions/{session_id}` | | none | `deleteSession` |
 | `get_messages` | GET `/workspaces/{ws}/sessions/{session_id}/messages` | | `list[ChatMsg]` | `getMessages` |
 | `get_context_map` | GET `/workspaces/{ws}/context-map` | | `ContextMap` | `getContextMap` |
 | `ask` | POST `/workspaces/{ws}/sessions/{session_id}/questions` (stream) | `question` | stream of `AgentEvent` | `ask` |
@@ -134,7 +143,9 @@ Binding rule: an input field whose name appears in `path` comes from the path. F
 
 `TurnOffer` and the turn operations are defined in `04-agents.md` section 6.3. They are the door for a harness that does agent work. They are not user actions, so the parity rule does not require them in the UI.
 
-`list_events`, `get_file_text` and `get_question_events` have no UI yet. This is a known gap in the parity rule (`09-decisions.md` section 3).
+`list_events`, `get_file_text` and `get_question_events` are in the API and MCP only. The owner decided that version 1 has no UI for them (`09-decisions.md` O15). Do not build one.
+
+The rules for `reference_file` and for every rename, edit and delete are in `02-data-model.md` sections 7.2 and 7.3. `upload_file` and `reference_file` return at once with status `processing`.
 
 ### Errors
 
@@ -144,8 +155,8 @@ Every failed request returns `ErrorBody` with one of these codes:
 |---|---|---|
 | 400 | `validation` | The input does not match the model, or a rule in `02-data-model.md` section 7 is broken |
 | 404 | `not_found` | Unknown or deleted workspace, file, agent, session, question or turn. Also an id from another workspace |
-| 409 | `conflict` | The session already has a running question. A turn lease is stale |
-| 413 | `too_large` | Upload above `TWYF_MAX_UPLOAD_MB` |
+| 409 | `conflict` | The session already has a running question. A turn lease is stale. An agent in a running huddle, or a session with a running question, is being deleted |
+| 413 | `too_large` | Upload above `TWYF_MAX_UPLOAD_MB`, or a referenced file above `TWYF_MAX_FILE_MB` |
 | 500 | `internal` | Anything else. The message is generic. Details go to the log |
 
 Services raise `twyf.services.errors.ServiceError(code, message, details)`. `http/errors.py` maps it. The MCP server passes the code and message through as a tool error.
@@ -210,7 +221,7 @@ Server-sent events were chosen over WebSocket: the stream is one-way, it is plai
 ## 5. Statements the engine makes about `ask`
 
 1. `ask` validates, stores the user message, inserts the question, records `question.asked` and starts the engine task. Then it streams.
-2. If the workspace has no ready files, the engine skips the huddle and answers "There are no files in this workspace yet." with no citations. `placeholder` is never set by the real backend.
+2. If the workspace has no usable files (live, status `ready`), the engine skips the huddle and answers "There are no files in this workspace yet." with no citations. `placeholder` is never set by the real backend.
 3. When the question ends, the assistant message is stored with its citations and `unverified` list, and `sessions.updated_at` is set.
 
 ## 6. Every change to `frontend/src/backend/types.ts`
@@ -221,17 +232,23 @@ All are additions. No existing field, type or method is removed or changed in me
 // 1. FileType gains 'image'.
 export type FileType = 'pdf' | 'docx' | 'csv' | 'md' | 'txt' | 'image' | 'other';
 
-// 2. FileItem gains two optional fields.
-  status?: 'processing' | 'ready' | 'unreadable';
+// 2. FileItem gains three optional fields.
+  status?: 'processing' | 'ready' | 'unreadable' | 'missing' | 'changed';
   version?: number;
+  /** Set when the file was added by its path and is read in place. */
+  path?: string;
 
-// 3. Citation gains five optional fields.
+// 3. Citation gains six optional fields.
   id?: string;
   extractionId?: string;
   /** Character offsets of the quote in the file's extracted text. */
   start?: number;
   end?: number;
   page?: number;
+  fileName?: string;
+
+// 3b. Note gains one optional field.
+  authorName?: string;
 
 // 4. New types.
 export interface Unverified { text: string; reason: string }
@@ -266,11 +283,21 @@ export const VERIFIER = 'verifier';
   | { type: 'cancelled' }
   | { type: 'answer'; text: string; citations: Citation[]; placeholder?: boolean; unverified?: Unverified[] }
 
-// 8. Backend gains three methods, and uploadFile's argument gains one optional field.
+// 8. Backend gains eleven methods, and uploadFile's argument gains one optional field.
   createWorkspace(name: string): Promise<Workspace>;
   renameWorkspace(ws: string, name: string): Promise<Workspace>;
   deleteWorkspace(ws: string): Promise<void>;
   uploadFile(ws: string, file: { name: string; size: number; data?: Blob }): Promise<void>;
+  /** Adds a file by its path on the backend's machine. Nothing is copied. */
+  referenceFile(ws: string, path: string): Promise<void>;
+  deleteFile(ws: string, fileId: string): Promise<void>;
+  renameAgent(ws: string, agentId: string, name: string): Promise<void>;
+  deleteAgent(ws: string, agentId: string): Promise<void>;
+  /** Only a note written by the user can be edited. */
+  editNote(ws: string, noteId: string, text: string): Promise<void>;
+  deleteNote(ws: string, noteId: string): Promise<void>;
+  renameSession(ws: string, sessionId: string, title: string): Promise<void>;
+  deleteSession(ws: string, sessionId: string): Promise<void>;
 ```
 
 The comment on `Note.authorId` becomes "An agent id, ORCHESTRATOR, VERIFIER or 'user'." The comment on `Note.citations` gains: "Required for a summary or finding written by an agent. An interpretation is guidance and may have none."
@@ -279,12 +306,14 @@ The comment on `Note.authorId` becomes "An agent id, ORCHESTRATOR, VERIFIER or '
 
 ## 7. Frontend work
 
-Kept minimal. The tasks are F1 to F7 in `08-implementation-plan.md`. Summary:
+Kept minimal. The tasks are F1 to F8 in `08-implementation-plan.md`. Summary:
 
 | Area | Change |
 |---|---|
 | Types | Apply section 6. Add `contract.gen.ts`, `contract.check.ts` and the script `gen:contract` |
-| Mock | Implement `createWorkspace`, `renameWorkspace`, `deleteWorkspace` in memory |
+| Mock | Implement the eleven new methods in memory |
+| Files | In the explorer: a text field "Add a file by its path" beside the upload button; a status badge for any status other than `ready`; a Delete button on the file card. While any file is `processing`, the file list is fetched again every 2 seconds |
+| Renames and deletes | Rename and Delete buttons on the agent card and on each session row; Delete on each note; Edit on a note the user wrote. All use the browser's `prompt` and `confirm`. A note's author is shown from `authorName` when the agent is no longer in the list, and a citation's file from `fileName` |
 | HTTP backend | New `frontend/src/backend/http.ts`: `httpBackend(baseUrl): Backend`. Sends `X-TWYF-Source: ui`. `ask` reads the POST response as server-sent events with `fetch` and a stream reader, yields each event, and calls `cancel_question` when the signal aborts |
 | Choosing | `frontend/src/backend/index.ts` reads `import.meta.env.VITE_BACKEND_URL`. Unset: the mock, as today. Set: `withDemo(httpBackend(url), mockBackend)` from new `router.ts`, which sends every call for workspace id `demo` to the mock and adds the demo workspace to `listWorkspaces`. "Run demo" therefore always plays the mock |
 | App | Start on the first workspace from `listWorkspaces` in place of the fixed id `mine`. Pass `data: f` in `upload`. Handle the six new events in `apply` |
