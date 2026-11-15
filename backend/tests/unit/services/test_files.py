@@ -62,7 +62,7 @@ def test_list_and_delete(ws: Workspace, ctx: RequestContext, conn: sqlite3.Conne
     listed = files.list(ctx, ListFilesInput(ws=ws.id))
     assert [f.id for f in listed] == [a.id, b.id]
     assert listed[1].name == "../../etc/passwd.txt"
-    assert all(f.status == "processing" for f in listed)
+    assert all(f.status == "ready" for f in listed)
     files.delete(ctx, DeleteFileInput(ws=ws.id, file_id=a.id))
     assert [f.id for f in files.list(ctx, ListFilesInput(ws=ws.id))] == [b.id]
     assert conn.execute("SELECT deleted_at FROM files WHERE id = ?", (a.id,)).fetchone()[0] is not None

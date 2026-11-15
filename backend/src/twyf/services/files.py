@@ -13,6 +13,7 @@ from twyf.contract.operations import (
     UploadFileInput,
 )
 from twyf.db.connection import transaction
+from twyf.db.repos import extractions
 from twyf.db.repos import files as repo
 from twyf.files import integrity, store
 from twyf.files.types import file_type
@@ -136,5 +137,23 @@ def delete(ctx: RequestContext, input: DeleteFileInput) -> None:
         record(conn, ctx, "file.deleted", workspace_id=input.ws, entity_type="file", entity_id=input.file_id)
 
 
+_KIND_ORDER = {"text": 0, "ocr": 1, "description": 2}
+
+
 def get_text(ctx: RequestContext, input: GetFileTextInput) -> FileText:
-    raise ServiceError("internal", "not implemented")
+    """The extracted text of the file's current version, or a character range of it."""
+    with state.db() as conn:
+        require(conn, input.ws)
+        row = _live(conn, input.ws, input.file_id)
+        ok = [x for x in extractions.for_version(conn, row["file_version_id"]) if x["status"] == "ok"]
+        ok.sort(key=lambda x: _KIND_ORDER.get(x["kind"], 9))
+        text: str = ok[0]["text"] if ok else ""
+        start = input.start if input.start is not None else 0
+        end = input.end if input.end is not None else len(text)
+        if start < 0 or end < start:
+            raise ServiceError(
+                "validation", "start and end must satisfy 0 <= start <= end", {"start": start, "end": end}
+            )
+        end = min(end, len(text))
+        start = min(start, end)
+        return FileText(text=text[start:end], start=start, end=end, total=len(text))
