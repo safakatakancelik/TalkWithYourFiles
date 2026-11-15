@@ -166,3 +166,19 @@ def test_to_wire(ws: Workspace, ctx: RequestContext, conn: sqlite3.Connection) -
     assert (wire.start, wire.end, wire.quote, wire.page) == (row.char_start, row.char_end, row.quote, None)
     with pytest.raises(LookupError):
         citations.to_wire(conn, "c_nope", 1)
+
+
+def test_try_quote(ws: Workspace, ctx: RequestContext, conn: sqlite3.Connection, events: EventsHelper) -> None:
+    from twyf.citations.locate import try_quote
+
+    item = upload(ctx, ws.id, "lease.txt", b"The lease ends on 30 June 2029.")
+    [passage] = _passages(conn, item.id)
+    assert try_quote(conn, ctx, workspace_id=ws.id, passage_id=passage, quote="ends on 30 June 2029") is None
+    assert (
+        try_quote(conn, ctx, workspace_id=ws.id, passage_id=passage, quote="ends in July 2031 instead")
+        == "quote_not_found"
+    )
+    with transaction(conn):
+        assert try_quote(conn, ctx, workspace_id=ws.id, passage_id=passage, quote="short") == "too_short"
+    assert [e.payload["reason"] for e in events("citation.rejected")] == ["quote_not_found", "too_short"]
+    assert conn.execute("SELECT COUNT(*) FROM citations").fetchone()[0] == 0

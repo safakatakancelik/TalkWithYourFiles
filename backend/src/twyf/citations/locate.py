@@ -112,3 +112,22 @@ def create_citation(
             entity_id=row.id, payload={"file_id": row.file_id, "file_version_id": row.file_version_id, "quote": row.quote},
         )  # fmt: skip
     return row
+
+
+def try_quote(
+    conn: sqlite3.Connection, ctx: RequestContext, *, workspace_id: str, passage_id: str, quote: str,
+    turn_id: str | None = None,
+) -> str | None:  # fmt: skip
+    """Checks a quote without creating a citation. Returns why it was rejected, recording citation.rejected, or None.
+
+    Used to validate a turn's output, so that a rejected attempt leaves no citation behind."""
+    chunk, _, reason = _locate(conn, workspace_id, passage_id, normalize(quote))
+    if chunk is not None:
+        return None
+    scope = nullcontext(conn) if conn.in_transaction else transaction(conn)
+    with scope:
+        record(
+            conn, ctx, "citation.rejected", workspace_id=workspace_id, turn_id=turn_id,
+            payload={"quote": quote, "passage_id": passage_id, "reason": reason},
+        )  # fmt: skip
+    return reason

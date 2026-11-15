@@ -151,3 +151,14 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test/api/v1") as c:
             yield c
+
+
+@pytest.fixture
+def harness(
+    ws: Workspace, ctx: RequestContext, conn: sqlite3.Connection, settings: Settings, fake: FakeRuntime,
+    retriever: HybridRetriever,
+) -> Any:  # fmt: skip
+    """A Harness (tests/unit/orchestration/harness.py), which imports from this module."""
+    from tests.unit.orchestration.harness import Harness
+
+    return Harness(ws, ctx, conn, settings, fake, retriever)
