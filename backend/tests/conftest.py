@@ -18,6 +18,7 @@ from twyf.db.repos import events as events_repo
 from twyf.files.jobs import InlineJobs
 from twyf.recording.context import RequestContext
 from twyf.retrieval.hybrid import HybridRetriever
+from twyf.runtime.fake import FakeRuntime
 from twyf.services import files, state, workspaces
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -132,10 +133,16 @@ def agent_note(
 
 
 @pytest.fixture
-def app(settings: Settings, jobs: InlineJobs) -> FastAPI:
+def fake() -> FakeRuntime:
+    """A FakeRuntime with an empty script. Tests set `fake.script`."""
+    return FakeRuntime([])
+
+
+@pytest.fixture
+def app(settings: Settings, jobs: InlineJobs, fake: FakeRuntime) -> FastAPI:
     from twyf.http.app import build_app
 
-    return build_app(settings, jobs=jobs)
+    return build_app(settings, runtime=fake, jobs=jobs)
 
 
 @pytest.fixture
