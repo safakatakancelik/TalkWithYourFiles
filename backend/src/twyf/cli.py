@@ -20,10 +20,23 @@ def export_contract() -> int:
     return 0
 
 
+def serve() -> int:
+    import uvicorn
+
+    from twyf.config import Settings
+    from twyf.http.app import build_app
+
+    settings = Settings()
+    uvicorn.run(build_app(settings), host=settings.host, port=settings.port)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "export-contract":
         return export_contract()
+    if args.command == "serve":
+        return serve()
     print(f"{args.command}: not implemented", file=sys.stderr)
     return 1
 

@@ -1,10 +1,12 @@
 import io
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+from fastapi import FastAPI
 
 from twyf.agents.definitions import sync, sync_config
 from twyf.config import Settings
@@ -127,3 +129,18 @@ def agent_note(
             conn, ctx, workspace_id=ws_id, file_id=file_id, author_id=agent_id, kind=kind, text=text,
             citation_ids=citation_ids, numbers=[], question_id=None, turn_id=None,
         ).id  # fmt: skip
+
+
+@pytest.fixture
+def app(settings: Settings, jobs: InlineJobs) -> FastAPI:
+    from twyf.http.app import build_app
+
+    return build_app(settings, jobs=jobs)
+
+
+@pytest.fixture
+async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test/api/v1") as c:
+            yield c
