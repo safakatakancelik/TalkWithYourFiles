@@ -8,7 +8,10 @@ from twyf.contract.models import Citation, Claim, MapLink, MapNode, Note, Unveri
 
 def _type_is_required(schema: dict[str, Any]) -> None:
     # `type` has a default so events are easy to build, but on the wire it is always present.
-    schema["properties"]["type"].pop("default", None)
+    properties: dict[str, Any] = schema.get("properties", {})
+    if "type" not in properties:
+        return
+    properties["type"].pop("default", None)
     required: list[str] = schema.setdefault("required", [])
     if "type" not in required:
         required.insert(0, "type")

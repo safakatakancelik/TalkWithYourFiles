@@ -18,3 +18,14 @@ jobs:
       - run: uv run ruff format --check
       - run: uv run pyright
       - run: uv run pytest --cov=twyf --cov-branch --cov-fail-under=90
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: uv run twyf export-contract
+        working-directory: backend
+      - run: git diff --exit-code contract/

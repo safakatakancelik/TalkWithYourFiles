@@ -1,0 +1,2306 @@
+{
+  "$defs": {
+    "AddFileVersionInput": {
+      "additionalProperties": false,
+      "properties": {
+        "fileId": {
+          "title": "Fileid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "fileId"
+      ],
+      "title": "AddFileVersionInput",
+      "type": "object"
+    },
+    "AddNoteInput": {
+      "additionalProperties": false,
+      "properties": {
+        "fileId": {
+          "title": "Fileid",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "fileId",
+        "text"
+      ],
+      "title": "AddNoteInput",
+      "type": "object"
+    },
+    "Agent": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "specialty": {
+          "title": "Specialty",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "specialty"
+      ],
+      "title": "Agent",
+      "type": "object"
+    },
+    "AgentEvent": {
+      "discriminator": {
+        "mapping": {
+          "answer": "#/$defs/AnswerEvent",
+          "assign": "#/$defs/AssignEvent",
+          "broadcast": "#/$defs/BroadcastEvent",
+          "cancelled": "#/$defs/CancelledEvent",
+          "context": "#/$defs/ContextEvent",
+          "error": "#/$defs/ErrorEvent",
+          "join": "#/$defs/JoinEvent",
+          "leave": "#/$defs/LeaveEvent",
+          "note": "#/$defs/NoteEvent",
+          "reading": "#/$defs/ReadingEvent",
+          "rehuddle": "#/$defs/RehuddleEvent",
+          "say": "#/$defs/SayEvent",
+          "started": "#/$defs/StartedEvent",
+          "status": "#/$defs/StatusEvent",
+          "verdict": "#/$defs/VerdictEvent",
+          "verify": "#/$defs/VerifyEvent"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/StartedEvent"
+        },
+        {
+          "$ref": "#/$defs/StatusEvent"
+        },
+        {
+          "$ref": "#/$defs/BroadcastEvent"
+        },
+        {
+          "$ref": "#/$defs/JoinEvent"
+        },
+        {
+          "$ref": "#/$defs/AssignEvent"
+        },
+        {
+          "$ref": "#/$defs/ReadingEvent"
+        },
+        {
+          "$ref": "#/$defs/NoteEvent"
+        },
+        {
+          "$ref": "#/$defs/SayEvent"
+        },
+        {
+          "$ref": "#/$defs/VerifyEvent"
+        },
+        {
+          "$ref": "#/$defs/VerdictEvent"
+        },
+        {
+          "$ref": "#/$defs/RehuddleEvent"
+        },
+        {
+          "$ref": "#/$defs/LeaveEvent"
+        },
+        {
+          "$ref": "#/$defs/ContextEvent"
+        },
+        {
+          "$ref": "#/$defs/AnswerEvent"
+        },
+        {
+          "$ref": "#/$defs/ErrorEvent"
+        },
+        {
+          "$ref": "#/$defs/CancelledEvent"
+        }
+      ],
+      "title": "AgentEvent"
+    },
+    "AnswerEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "placeholder": {
+          "type": "boolean"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "answer",
+          "title": "Type",
+          "type": "string"
+        },
+        "unverified": {
+          "items": {
+            "$ref": "#/$defs/Unverified"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "text",
+        "citations"
+      ],
+      "title": "AnswerEvent",
+      "type": "object"
+    },
+    "AskInput": {
+      "additionalProperties": false,
+      "properties": {
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "sessionId",
+        "question"
+      ],
+      "title": "AskInput",
+      "type": "object"
+    },
+    "AskTranslatorInput": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "title": "Agentid",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "agentId",
+        "question"
+      ],
+      "title": "AskTranslatorInput",
+      "type": "object"
+    },
+    "AssignEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "title": "Agentid",
+          "type": "string"
+        },
+        "fileId": {
+          "title": "Fileid",
+          "type": "string"
+        },
+        "type": {
+          "const": "assign",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "agentId",
+        "fileId"
+      ],
+      "title": "AssignEvent",
+      "type": "object"
+    },
+    "BroadcastEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "to": {
+          "items": {
+            "type": "string"
+          },
+          "title": "To",
+          "type": "array"
+        },
+        "type": {
+          "const": "broadcast",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text",
+        "to"
+      ],
+      "title": "BroadcastEvent",
+      "type": "object"
+    },
+    "CancelQuestionInput": {
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "title": "Questionid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "questionId"
+      ],
+      "title": "CancelQuestionInput",
+      "type": "object"
+    },
+    "CancelledEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "cancelled",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "CancelledEvent",
+      "type": "object"
+    },
+    "ChatMsg": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "type": "array"
+        },
+        "error": {
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "pending": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "boolean"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "unverified": {
+          "items": {
+            "$ref": "#/$defs/Unverified"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "text"
+      ],
+      "title": "ChatMsg",
+      "type": "object"
+    },
+    "Citation": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "title": "Agentid",
+          "type": "string"
+        },
+        "end": {
+          "type": "integer"
+        },
+        "extractionId": {
+          "type": "string"
+        },
+        "fileId": {
+          "title": "Fileid",
+          "type": "string"
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "fileVersion": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "location": {
+          "title": "Location",
+          "type": "string"
+        },
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "page": {
+          "type": "integer"
+        },
+        "passage": {
+          "title": "Passage",
+          "type": "string"
+        },
+        "quote": {
+          "title": "Quote",
+          "type": "string"
+        },
+        "start": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n",
+        "fileId",
+        "agentId",
+        "location",
+        "passage",
+        "quote"
+      ],
+      "title": "Citation",
+      "type": "object"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "calculation": {
+          "type": "string"
+        },
+        "citations": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "derivedFrom": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "quoted",
+            "derived"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "kind",
+        "citations"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "ClaimTurnInput": {
+      "additionalProperties": false,
+      "properties": {
+        "waitS": {
+          "default": 25,
+          "title": "Waits",
+          "type": "integer"
+        },
+        "worker": {
+          "title": "Worker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "worker"
+      ],
+      "title": "ClaimTurnInput",
+      "type": "object"
+    },
+    "ContextEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "links": {
+          "items": {
+            "$ref": "#/$defs/MapLink"
+          },
+          "title": "Links",
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/MapNode"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "type": {
+          "const": "context",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "nodes",
+        "links"
+      ],
+      "title": "ContextEvent",
+      "type": "object"
+    },
+    "ContextMap": {
+      "additionalProperties": false,
+      "properties": {
+        "links": {
+          "items": {
+            "$ref": "#/$defs/MapLink"
+          },
+          "title": "Links",
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/MapNode"
+          },
+          "title": "Nodes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "links"
+      ],
+      "title": "ContextMap",
+      "type": "object"
+    },
+    "CreateAgentInput": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "specialty": {
+          "title": "Specialty",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "name",
+        "specialty"
+      ],
+      "title": "CreateAgentInput",
+      "type": "object"
+    },
+    "CreateSessionInput": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "title"
+      ],
+      "title": "CreateSessionInput",
+      "type": "object"
+    },
+    "CreateWorkspaceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "CreateWorkspaceInput",
+      "type": "object"
+    },
+    "DeleteAgentInput": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "title": "Agentid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "agentId"
+      ],
+      "title": "DeleteAgentInput",
+      "type": "object"
+    },
+    "DeleteFileInput": {
+      "additionalProperties": false,
+      "properties": {
+        "fileId": {
+          "title": "Fileid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "fileId"
+      ],
+      "title": "DeleteFileInput",
+      "type": "object"
+    },
+    "DeleteNoteInput": {
+      "additionalProperties": false,
+      "properties": {
+        "noteId": {
+          "title": "Noteid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "noteId"
+      ],
+      "title": "DeleteNoteInput",
+      "type": "object"
+    },
+    "DeleteSessionInput": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "sessionId"
+      ],
+      "title": "DeleteSessionInput",
+      "type": "object"
+    },
+    "DeleteWorkspaceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws"
+      ],
+      "title": "DeleteWorkspaceInput",
+      "type": "object"
+    },
+    "EditNoteInput": {
+      "additionalProperties": false,
+      "properties": {
+        "noteId": {
+          "title": "Noteid",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "noteId",
+        "text"
+      ],
+      "title": "EditNoteInput",
+      "type": "object"
+    },
+    "ErrorBody": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorInfo"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "title": "ErrorBody",
+      "type": "object"
+    },
+    "ErrorEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "type": {
+          "const": "error",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "code",
+        "message"
+      ],
+      "title": "ErrorEvent",
+      "type": "object"
+    },
+    "ErrorInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ErrorInfo",
+      "type": "object"
+    },
+    "EventRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "title": "Actorid",
+          "type": "string"
+        },
+        "causeEventId": {
+          "type": "integer"
+        },
+        "entityId": {
+          "type": "string"
+        },
+        "entityType": {
+          "type": "string"
+        },
+        "eventType": {
+          "title": "Eventtype",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "occurredAt": {
+          "title": "Occurredat",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "questionId": {
+          "type": "string"
+        },
+        "roundId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "occurredAt",
+        "eventType",
+        "actorId",
+        "source",
+        "payload"
+      ],
+      "title": "EventRecord",
+      "type": "object"
+    },
+    "FailTurnInput": {
+      "additionalProperties": false,
+      "properties": {
+        "leaseToken": {
+          "title": "Leasetoken",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "turnId": {
+          "title": "Turnid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turnId",
+        "leaseToken",
+        "reason"
+      ],
+      "title": "FailTurnInput",
+      "type": "object"
+    },
+    "FileItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "sizeKb": {
+          "title": "Sizekb",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "processing",
+            "ready",
+            "unreadable",
+            "missing",
+            "changed"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "pdf",
+            "docx",
+            "csv",
+            "md",
+            "txt",
+            "image",
+            "other"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "uploadedAt": {
+          "title": "Uploadedat",
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "sizeKb",
+        "uploadedAt"
+      ],
+      "title": "FileItem",
+      "type": "object"
+    },
+    "FileText": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "title": "End",
+          "type": "integer"
+        },
+        "start": {
+          "title": "Start",
+          "type": "integer"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "text",
+        "start",
+        "end",
+        "total"
+      ],
+      "title": "FileText",
+      "type": "object"
+    },
+    "GetContextMapInput": {
+      "additionalProperties": false,
+      "properties": {
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws"
+      ],
+      "title": "GetContextMapInput",
+      "type": "object"
+    },
+    "GetFileTextInput": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "type": "integer"
+        },
+        "fileId": {
+          "title": "Fileid",
+          "type": "string"
+        },
+        "start": {
+          "type": "integer"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "fileId"
+      ],
+      "title": "GetFileTextInput",
+      "type": "object"
+    },
+    "GetMessagesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "sessionId"
+      ],
+      "title": "GetMessagesInput",
+      "type": "object"
+    },
+    "GetQuestionEventsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "type": "integer"
+        },
+        "questionId": {
+          "title": "Questionid",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "questionId"
+      ],
+      "title": "GetQuestionEventsInput",
+      "type": "object"
+    },
+    "JoinEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "title": "Agentid",
+          "type": "string"
+        },
+        "how": {
+          "enum": [
+            "volunteered",
+            "called"
+          ],
+          "title": "How",
+          "type": "string"
+        },
+        "type": {
+          "const": "join",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "agentId",
+        "how"
+      ],
+      "title": "JoinEvent",
+      "type": "object"
+    },
+    "LeaveEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agentIds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Agentids",
+          "type": "array"
+        },
+        "type": {
+          "const": "leave",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "agentIds"
+      ],
+      "title": "LeaveEvent",
+      "type": "object"
+    },
+    "ListAgentsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws"
+      ],
+      "title": "ListAgentsInput",
+      "type": "object"
+    },
+    "ListEventsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "type": "integer"
+        },
+        "limit": {
+          "default": 200,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "question": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "title": "ListEventsInput",
+      "type": "object"
+    },
+    "ListFilesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws"
+      ],
+      "title": "ListFilesInput",
+      "type": "object"
+    },
+    "ListNotesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws"
+      ],
+      "title": "ListNotesInput",
+      "type": "object"
+    },
+    "ListSessionsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws"
+      ],
+      "title": "ListSessionsInput",
+      "type": "object"
+    },
+    "ListWorkspacesInput": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "ListWorkspacesInput",
+      "type": "object"
+    },
+    "MapLink": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "MapLink",
+      "type": "object"
+    },
+    "MapNode": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "file",
+            "entity"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "kind"
+      ],
+      "title": "MapNode",
+      "type": "object"
+    },
+    "Note": {
+      "additionalProperties": false,
+      "properties": {
+        "authorId": {
+          "title": "Authorid",
+          "type": "string"
+        },
+        "authorName": {
+          "type": "string"
+        },
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        },
+        "fileId": {
+          "title": "Fileid",
+          "type": "string"
+        },
+        "fileVersion": {
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "summary",
+            "interpretation",
+            "finding"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "weight": {
+          "enum": [
+            "off",
+            "low",
+            "normal",
+            "high"
+          ],
+          "title": "Weight",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fileId",
+        "authorId",
+        "kind",
+        "text",
+        "citations",
+        "createdAt",
+        "weight"
+      ],
+      "title": "Note",
+      "type": "object"
+    },
+    "NoteEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "$ref": "#/$defs/Note"
+        },
+        "type": {
+          "const": "note",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "note"
+      ],
+      "title": "NoteEvent",
+      "type": "object"
+    },
+    "ReadingEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "title": "Agentid",
+          "type": "string"
+        },
+        "type": {
+          "const": "reading",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "agentId"
+      ],
+      "title": "ReadingEvent",
+      "type": "object"
+    },
+    "RehuddleEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "claimIds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Claimids",
+          "type": "array"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "round": {
+          "title": "Round",
+          "type": "integer"
+        },
+        "type": {
+          "const": "rehuddle",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "round",
+        "reason",
+        "claimIds"
+      ],
+      "title": "RehuddleEvent",
+      "type": "object"
+    },
+    "RenameAgentInput": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "title": "Agentid",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "agentId",
+        "name"
+      ],
+      "title": "RenameAgentInput",
+      "type": "object"
+    },
+    "RenameSessionInput": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "sessionId",
+        "title"
+      ],
+      "title": "RenameSessionInput",
+      "type": "object"
+    },
+    "RenameWorkspaceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "name"
+      ],
+      "title": "RenameWorkspaceInput",
+      "type": "object"
+    },
+    "SayEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "title": "Agentid",
+          "type": "string"
+        },
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "say",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "agentId",
+        "text"
+      ],
+      "title": "SayEvent",
+      "type": "object"
+    },
+    "Session": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "messageCount": {
+          "title": "Messagecount",
+          "type": "integer"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "updatedAt": {
+          "title": "Updatedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "updatedAt",
+        "messageCount"
+      ],
+      "title": "Session",
+      "type": "object"
+    },
+    "SetNoteWeightInput": {
+      "additionalProperties": false,
+      "properties": {
+        "noteIds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Noteids",
+          "type": "array"
+        },
+        "weight": {
+          "enum": [
+            "off",
+            "low",
+            "normal",
+            "high"
+          ],
+          "title": "Weight",
+          "type": "string"
+        },
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws",
+        "noteIds",
+        "weight"
+      ],
+      "title": "SetNoteWeightInput",
+      "type": "object"
+    },
+    "StartedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "questionId": {
+          "title": "Questionid",
+          "type": "string"
+        },
+        "type": {
+          "const": "started",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "questionId"
+      ],
+      "title": "StartedEvent",
+      "type": "object"
+    },
+    "StatusEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "status",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "title": "StatusEvent",
+      "type": "object"
+    },
+    "SubmitResult": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "title": "Accepted",
+          "type": "boolean"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "title": "SubmitResult",
+      "type": "object"
+    },
+    "SubmitTurnInput": {
+      "additionalProperties": false,
+      "properties": {
+        "leaseToken": {
+          "title": "Leasetoken",
+          "type": "string"
+        },
+        "output": {
+          "additionalProperties": true,
+          "title": "Output",
+          "type": "object"
+        },
+        "turnId": {
+          "title": "Turnid",
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "turnId",
+        "leaseToken",
+        "output"
+      ],
+      "title": "SubmitTurnInput",
+      "type": "object"
+    },
+    "TranslatorReply": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "citations"
+      ],
+      "title": "TranslatorReply",
+      "type": "object"
+    },
+    "TurnOffer": {
+      "additionalProperties": false,
+      "properties": {
+        "agentKind": {
+          "title": "Agentkind",
+          "type": "string"
+        },
+        "agentName": {
+          "title": "Agentname",
+          "type": "string"
+        },
+        "expiresAt": {
+          "title": "Expiresat",
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": true,
+          "title": "Input",
+          "type": "object"
+        },
+        "instructions": {
+          "title": "Instructions",
+          "type": "string"
+        },
+        "leaseToken": {
+          "title": "Leasetoken",
+          "type": "string"
+        },
+        "outputSchema": {
+          "additionalProperties": true,
+          "title": "Outputschema",
+          "type": "object"
+        },
+        "systemPrompt": {
+          "title": "Systemprompt",
+          "type": "string"
+        },
+        "turnId": {
+          "title": "Turnid",
+          "type": "string"
+        },
+        "turnType": {
+          "title": "Turntype",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turnId",
+        "leaseToken",
+        "turnType",
+        "agentName",
+        "agentKind",
+        "systemPrompt",
+        "instructions",
+        "input",
+        "outputSchema",
+        "expiresAt"
+      ],
+      "title": "TurnOffer",
+      "type": "object"
+    },
+    "Unverified": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "reason"
+      ],
+      "title": "Unverified",
+      "type": "object"
+    },
+    "UploadFileInput": {
+      "additionalProperties": false,
+      "properties": {
+        "ws": {
+          "title": "Ws",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ws"
+      ],
+      "title": "UploadFileInput",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "inputTokens": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        },
+        "outputTokens": {
+          "type": "integer"
+        }
+      },
+      "title": "Usage",
+      "type": "object"
+    },
+    "Verdict": {
+      "additionalProperties": false,
+      "properties": {
+        "claimId": {
+          "title": "Claimid",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "supported",
+            "partly_supported",
+            "unsupported",
+            "mechanical_fail"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claimId",
+        "verdict",
+        "reason"
+      ],
+      "title": "Verdict",
+      "type": "object"
+    },
+    "VerdictEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "round": {
+          "title": "Round",
+          "type": "integer"
+        },
+        "type": {
+          "const": "verdict",
+          "title": "Type",
+          "type": "string"
+        },
+        "verdicts": {
+          "items": {
+            "$ref": "#/$defs/Verdict"
+          },
+          "title": "Verdicts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "round",
+        "passed",
+        "verdicts"
+      ],
+      "title": "VerdictEvent",
+      "type": "object"
+    },
+    "VerifyEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/Claim"
+          },
+          "title": "Claims",
+          "type": "array"
+        },
+        "round": {
+          "title": "Round",
+          "type": "integer"
+        },
+        "type": {
+          "const": "verify",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "round",
+        "claims",
+        "citations"
+      ],
+      "title": "VerifyEvent",
+      "type": "object"
+    },
+    "Workspace": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "Workspace",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "operations": [
+    {
+      "backendMethod": "listWorkspaces",
+      "input": {
+        "$ref": "#/$defs/ListWorkspacesInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "list_workspaces",
+      "output": {
+        "items": {
+          "$ref": "#/$defs/Workspace"
+        },
+        "type": "array"
+      },
+      "path": "/workspaces"
+    },
+    {
+      "backendMethod": "createWorkspace",
+      "input": {
+        "$ref": "#/$defs/CreateWorkspaceInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "create_workspace",
+      "output": {
+        "$ref": "#/$defs/Workspace"
+      },
+      "path": "/workspaces"
+    },
+    {
+      "backendMethod": "renameWorkspace",
+      "input": {
+        "$ref": "#/$defs/RenameWorkspaceInput"
+      },
+      "kind": "json",
+      "method": "PATCH",
+      "name": "rename_workspace",
+      "output": {
+        "$ref": "#/$defs/Workspace"
+      },
+      "path": "/workspaces/{ws}"
+    },
+    {
+      "backendMethod": "deleteWorkspace",
+      "input": {
+        "$ref": "#/$defs/DeleteWorkspaceInput"
+      },
+      "kind": "json",
+      "method": "DELETE",
+      "name": "delete_workspace",
+      "output": {
+        "type": "null"
+      },
+      "path": "/workspaces/{ws}"
+    },
+    {
+      "backendMethod": "listFiles",
+      "input": {
+        "$ref": "#/$defs/ListFilesInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "list_files",
+      "output": {
+        "items": {
+          "$ref": "#/$defs/FileItem"
+        },
+        "type": "array"
+      },
+      "path": "/workspaces/{ws}/files"
+    },
+    {
+      "backendMethod": "uploadFile",
+      "input": {
+        "$ref": "#/$defs/UploadFileInput"
+      },
+      "kind": "upload",
+      "method": "POST",
+      "name": "upload_file",
+      "output": {
+        "$ref": "#/$defs/FileItem"
+      },
+      "path": "/workspaces/{ws}/files"
+    },
+    {
+      "backendMethod": "addFileVersion",
+      "input": {
+        "$ref": "#/$defs/AddFileVersionInput"
+      },
+      "kind": "upload",
+      "method": "POST",
+      "name": "add_file_version",
+      "output": {
+        "$ref": "#/$defs/FileItem"
+      },
+      "path": "/workspaces/{ws}/files/{file_id}/versions"
+    },
+    {
+      "backendMethod": "deleteFile",
+      "input": {
+        "$ref": "#/$defs/DeleteFileInput"
+      },
+      "kind": "json",
+      "method": "DELETE",
+      "name": "delete_file",
+      "output": {
+        "type": "null"
+      },
+      "path": "/workspaces/{ws}/files/{file_id}"
+    },
+    {
+      "backendMethod": null,
+      "input": {
+        "$ref": "#/$defs/GetFileTextInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "get_file_text",
+      "output": {
+        "$ref": "#/$defs/FileText"
+      },
+      "path": "/workspaces/{ws}/files/{file_id}/text"
+    },
+    {
+      "backendMethod": "listAgents",
+      "input": {
+        "$ref": "#/$defs/ListAgentsInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "list_agents",
+      "output": {
+        "items": {
+          "$ref": "#/$defs/Agent"
+        },
+        "type": "array"
+      },
+      "path": "/workspaces/{ws}/agents"
+    },
+    {
+      "backendMethod": "createAgent",
+      "input": {
+        "$ref": "#/$defs/CreateAgentInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "create_agent",
+      "output": {
+        "$ref": "#/$defs/Agent"
+      },
+      "path": "/workspaces/{ws}/agents"
+    },
+    {
+      "backendMethod": "renameAgent",
+      "input": {
+        "$ref": "#/$defs/RenameAgentInput"
+      },
+      "kind": "json",
+      "method": "PATCH",
+      "name": "rename_agent",
+      "output": {
+        "$ref": "#/$defs/Agent"
+      },
+      "path": "/workspaces/{ws}/agents/{agent_id}"
+    },
+    {
+      "backendMethod": "deleteAgent",
+      "input": {
+        "$ref": "#/$defs/DeleteAgentInput"
+      },
+      "kind": "json",
+      "method": "DELETE",
+      "name": "delete_agent",
+      "output": {
+        "type": "null"
+      },
+      "path": "/workspaces/{ws}/agents/{agent_id}"
+    },
+    {
+      "backendMethod": "listNotes",
+      "input": {
+        "$ref": "#/$defs/ListNotesInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "list_notes",
+      "output": {
+        "items": {
+          "$ref": "#/$defs/Note"
+        },
+        "type": "array"
+      },
+      "path": "/workspaces/{ws}/notes"
+    },
+    {
+      "backendMethod": "addNote",
+      "input": {
+        "$ref": "#/$defs/AddNoteInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "add_note",
+      "output": {
+        "$ref": "#/$defs/Note"
+      },
+      "path": "/workspaces/{ws}/notes"
+    },
+    {
+      "backendMethod": "editNote",
+      "input": {
+        "$ref": "#/$defs/EditNoteInput"
+      },
+      "kind": "json",
+      "method": "PATCH",
+      "name": "edit_note",
+      "output": {
+        "$ref": "#/$defs/Note"
+      },
+      "path": "/workspaces/{ws}/notes/{note_id}"
+    },
+    {
+      "backendMethod": "deleteNote",
+      "input": {
+        "$ref": "#/$defs/DeleteNoteInput"
+      },
+      "kind": "json",
+      "method": "DELETE",
+      "name": "delete_note",
+      "output": {
+        "type": "null"
+      },
+      "path": "/workspaces/{ws}/notes/{note_id}"
+    },
+    {
+      "backendMethod": "setNoteWeight",
+      "input": {
+        "$ref": "#/$defs/SetNoteWeightInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "set_note_weight",
+      "output": {
+        "type": "null"
+      },
+      "path": "/workspaces/{ws}/notes/weight"
+    },
+    {
+      "backendMethod": "listSessions",
+      "input": {
+        "$ref": "#/$defs/ListSessionsInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "list_sessions",
+      "output": {
+        "items": {
+          "$ref": "#/$defs/Session"
+        },
+        "type": "array"
+      },
+      "path": "/workspaces/{ws}/sessions"
+    },
+    {
+      "backendMethod": "createSession",
+      "input": {
+        "$ref": "#/$defs/CreateSessionInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "create_session",
+      "output": {
+        "$ref": "#/$defs/Session"
+      },
+      "path": "/workspaces/{ws}/sessions"
+    },
+    {
+      "backendMethod": "renameSession",
+      "input": {
+        "$ref": "#/$defs/RenameSessionInput"
+      },
+      "kind": "json",
+      "method": "PATCH",
+      "name": "rename_session",
+      "output": {
+        "$ref": "#/$defs/Session"
+      },
+      "path": "/workspaces/{ws}/sessions/{session_id}"
+    },
+    {
+      "backendMethod": "deleteSession",
+      "input": {
+        "$ref": "#/$defs/DeleteSessionInput"
+      },
+      "kind": "json",
+      "method": "DELETE",
+      "name": "delete_session",
+      "output": {
+        "type": "null"
+      },
+      "path": "/workspaces/{ws}/sessions/{session_id}"
+    },
+    {
+      "backendMethod": "getMessages",
+      "input": {
+        "$ref": "#/$defs/GetMessagesInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "get_messages",
+      "output": {
+        "items": {
+          "$ref": "#/$defs/ChatMsg"
+        },
+        "type": "array"
+      },
+      "path": "/workspaces/{ws}/sessions/{session_id}/messages"
+    },
+    {
+      "backendMethod": "getContextMap",
+      "input": {
+        "$ref": "#/$defs/GetContextMapInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "get_context_map",
+      "output": {
+        "$ref": "#/$defs/ContextMap"
+      },
+      "path": "/workspaces/{ws}/context-map"
+    },
+    {
+      "backendMethod": "ask",
+      "input": {
+        "$ref": "#/$defs/AskInput"
+      },
+      "kind": "stream",
+      "method": "POST",
+      "name": "ask",
+      "output": {
+        "$ref": "#/$defs/AgentEvent"
+      },
+      "path": "/workspaces/{ws}/sessions/{session_id}/questions"
+    },
+    {
+      "backendMethod": null,
+      "input": {
+        "$ref": "#/$defs/GetQuestionEventsInput"
+      },
+      "kind": "stream",
+      "method": "GET",
+      "name": "get_question_events",
+      "output": {
+        "$ref": "#/$defs/AgentEvent"
+      },
+      "path": "/workspaces/{ws}/questions/{question_id}/events"
+    },
+    {
+      "backendMethod": "ask",
+      "input": {
+        "$ref": "#/$defs/CancelQuestionInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "cancel_question",
+      "output": {
+        "type": "null"
+      },
+      "path": "/workspaces/{ws}/questions/{question_id}/cancel"
+    },
+    {
+      "backendMethod": "askTranslator",
+      "input": {
+        "$ref": "#/$defs/AskTranslatorInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "ask_translator",
+      "output": {
+        "$ref": "#/$defs/TranslatorReply"
+      },
+      "path": "/workspaces/{ws}/agents/{agent_id}/ask"
+    },
+    {
+      "backendMethod": null,
+      "input": {
+        "$ref": "#/$defs/ListEventsInput"
+      },
+      "kind": "json",
+      "method": "GET",
+      "name": "list_events",
+      "output": {
+        "items": {
+          "$ref": "#/$defs/EventRecord"
+        },
+        "type": "array"
+      },
+      "path": "/events"
+    },
+    {
+      "backendMethod": null,
+      "input": {
+        "$ref": "#/$defs/ClaimTurnInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "claim_turn",
+      "output": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/TurnOffer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "path": "/runtime/turns/claim"
+    },
+    {
+      "backendMethod": null,
+      "input": {
+        "$ref": "#/$defs/SubmitTurnInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "submit_turn",
+      "output": {
+        "$ref": "#/$defs/SubmitResult"
+      },
+      "path": "/runtime/turns/{turn_id}/submit"
+    },
+    {
+      "backendMethod": null,
+      "input": {
+        "$ref": "#/$defs/FailTurnInput"
+      },
+      "kind": "json",
+      "method": "POST",
+      "name": "fail_turn",
+      "output": {
+        "type": "null"
+      },
+      "path": "/runtime/turns/{turn_id}/fail"
+    }
+  ],
+  "title": "twyf contract"
+}
