@@ -37,10 +37,10 @@ def test_path_fields_are_input_fields() -> None:
 
 def test_stubs_raise_not_implemented() -> None:
     ctx = RequestContext(actor_id="u_local", source="api", user_id="u_local", request_id="test")
-    op = get_operation("list_workspaces")
+    op = get_operation("fail_turn")
     assert op.input is not None
     with pytest.raises(ServiceError) as raised:
-        resolve_handler(op)(ctx, op.input.model_validate({}))
+        resolve_handler(op)(ctx, op.input.model_validate({"turnId": "t_1", "leaseToken": "x", "reason": "r"}))
     assert raised.value.code == "internal"
     assert HTTP_STATUS[raised.value.code] == 500
 

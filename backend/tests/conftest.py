@@ -5,13 +5,15 @@ from typing import Any
 
 import pytest
 
+from twyf.agents.definitions import sync, sync_config
 from twyf.config import Settings
-from twyf.contract.models import EventRecord
-from twyf.db.connection import connect
+from twyf.contract.models import EventRecord, Workspace
+from twyf.contract.operations import CreateWorkspaceInput
+from twyf.db.connection import connect, transaction
 from twyf.db.migrate import migrate
 from twyf.db.repos import events as events_repo
 from twyf.recording.context import RequestContext
-from twyf.services import state
+from twyf.services import state, workspaces
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -56,3 +58,19 @@ def events(conn: sqlite3.Connection) -> EventsHelper:
         return events_repo.list(conn, event_type=type, limit=100_000, **filters)
 
     return read
+
+
+SYSTEM = RequestContext(actor_id="system", source="internal", user_id="u_local", request_id="test")
+
+
+@pytest.fixture
+def synced(conn: sqlite3.Connection, settings: Settings) -> None:
+    """The repository's .agents and the settings, snapshotted as the server does at start."""
+    with transaction(conn):
+        sync(conn, SYSTEM, settings)
+        sync_config(conn, SYSTEM, settings)
+
+
+@pytest.fixture
+def ws(synced: None, ctx: RequestContext) -> Workspace:
+    return workspaces.create(ctx, CreateWorkspaceInput(name="Test workspace"))

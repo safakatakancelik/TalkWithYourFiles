@@ -5,15 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import REPO_ROOT, EventsHelper
+from tests.conftest import REPO_ROOT, SYSTEM, EventsHelper
 from twyf import clock
 from twyf.agents.definitions import current_version, load_folder, parse_frontmatter, resolve, sync, sync_config
 from twyf.config import Settings
 from twyf.db.connection import transaction
 from twyf.db.repos import versioned
-from twyf.recording.context import RequestContext
-
-SYSTEM = RequestContext(actor_id="system", source="internal", user_id="u_local", request_id="test")
 
 
 @pytest.fixture

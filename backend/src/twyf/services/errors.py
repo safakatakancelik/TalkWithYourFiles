@@ -15,3 +15,11 @@ class ServiceError(Exception):
         self.code = code
         self.message = message
         self.details = details
+
+
+def require_text(value: str, field: str) -> str:
+    """The value without surrounding spaces. An empty one is a `validation` error."""
+    text = value.strip()
+    if not text:
+        raise ServiceError("validation", f"{field} must not be empty", {"field": field})
+    return text

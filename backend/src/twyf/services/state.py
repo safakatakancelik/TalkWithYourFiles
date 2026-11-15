@@ -4,6 +4,8 @@ Configured once by the server (and by the test fixtures). Each service call open
 """
 
 import sqlite3
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 from twyf.config import Settings
@@ -30,3 +32,13 @@ def db_path() -> Path:
 def connect() -> sqlite3.Connection:
     """The connection factory: a new connection to the configured database."""
     return _connect(db_path())
+
+
+@contextmanager
+def db() -> Generator[sqlite3.Connection]:
+    """A connection for one service call, closed afterwards."""
+    conn = connect()
+    try:
+        yield conn
+    finally:
+        conn.close()

@@ -6,8 +6,7 @@ from twyf.services import state
 
 
 def list_events(ctx: RequestContext, input: ListEventsInput) -> list[EventRecord]:
-    conn = state.connect()
-    try:
+    with state.db() as conn:
         return events_repo.list(
             conn,
             workspace_id=input.workspace,
@@ -16,5 +15,3 @@ def list_events(ctx: RequestContext, input: ListEventsInput) -> list[EventRecord
             after=input.after,
             limit=input.limit,
         )
-    finally:
-        conn.close()
