@@ -1,4 +1,4 @@
-"""What every service function needs and does not receive as an argument: the settings and a connection.
+"""What every service function needs and does not receive as an argument: settings, a connection, the jobs.
 
 Configured once by the server (and by the test fixtures). Each service call opens its own connection.
 """
@@ -10,13 +10,21 @@ from pathlib import Path
 
 from twyf.config import Settings
 from twyf.db.connection import connect as _connect
+from twyf.files.jobs import InlineJobs, Jobs
 
 _settings: Settings | None = None
+_jobs: Jobs = InlineJobs()
 
 
-def configure(settings: Settings) -> None:
-    global _settings
+def configure(settings: Settings, jobs: Jobs | None = None) -> None:
+    global _settings, _jobs
     _settings = settings
+    _jobs = jobs if jobs is not None else InlineJobs()
+
+
+def jobs() -> Jobs:
+    """Where ingestion runs: a worker thread in the server, inline in tests and seeding."""
+    return _jobs
 
 
 def settings() -> Settings:

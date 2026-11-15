@@ -22,7 +22,9 @@ def test_operations_unique_and_resolvable() -> None:
     for op in OPERATIONS:
         handler = resolve_handler(op)
         assert callable(handler)
-        assert list(inspect.signature(handler).parameters) == ["ctx", "input"]
+        params = list(inspect.signature(handler).parameters.values())
+        assert [p.name for p in params[:2]] == ["ctx", "input"]
+        assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in params[2:]), op.name
         assert op.input is not None and issubclass(op.input, Wire)
         assert op.input.__name__ == _camel(op.name) + "Input"
         assert get_operation(op.name) is op

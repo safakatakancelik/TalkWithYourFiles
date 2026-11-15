@@ -1,3 +1,4 @@
+import io
 import sqlite3
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -7,13 +8,14 @@ import pytest
 
 from twyf.agents.definitions import sync, sync_config
 from twyf.config import Settings
-from twyf.contract.models import EventRecord, Workspace
-from twyf.contract.operations import CreateWorkspaceInput
+from twyf.contract.models import EventRecord, FileItem, Workspace
+from twyf.contract.operations import AddFileVersionInput, CreateWorkspaceInput, UploadFileInput
 from twyf.db.connection import connect, transaction
 from twyf.db.migrate import migrate
 from twyf.db.repos import events as events_repo
+from twyf.files.jobs import InlineJobs
 from twyf.recording.context import RequestContext
-from twyf.services import state, workspaces
+from twyf.services import files, state, workspaces
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -74,3 +76,18 @@ def synced(conn: sqlite3.Connection, settings: Settings) -> None:
 @pytest.fixture
 def ws(synced: None, ctx: RequestContext) -> Workspace:
     return workspaces.create(ctx, CreateWorkspaceInput(name="Test workspace"))
+
+
+@pytest.fixture
+def jobs(settings: Settings) -> InlineJobs:
+    inline = InlineJobs()
+    state.configure(settings, inline)
+    return inline
+
+
+def upload(ctx: RequestContext, ws_id: str, name: str, data: bytes, file_id: str | None = None) -> FileItem:
+    return files.upload(ctx, UploadFileInput(ws=ws_id), name=name, stream=io.BytesIO(data), file_id=file_id)
+
+
+def add_version(ctx: RequestContext, ws_id: str, file_id: str, name: str, data: bytes) -> FileItem:
+    return files.add_version(ctx, AddFileVersionInput(ws=ws_id, file_id=file_id), name=name, stream=io.BytesIO(data))
