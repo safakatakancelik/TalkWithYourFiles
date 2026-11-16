@@ -1,3 +1,4 @@
+import importlib.util
 from pathlib import Path
 
 from twyf.config import Settings
@@ -77,4 +78,5 @@ def test_pick_parser(settings: Settings) -> None:
     assert pick_parser(basic, "image") is None
     assert pick_parser(basic, "other") is None
     auto = settings.model_copy(update={"parser": "auto"})
-    assert isinstance(pick_parser(auto, "docx"), DocxBasicParser)
+    rich = importlib.util.find_spec("docling") is not None
+    assert type(pick_parser(auto, "docx")).__name__ == ("DoclingParser" if rich else "DocxBasicParser")
