@@ -26,21 +26,31 @@ The backend never calls a model itself. With `./start.sh`, each agent turn runs 
 
 **1. The app, as an end user.** The chat UI with the agents behind it. The agents run on one of two accounts.
 
-With your Claude subscription (Pro or Max). Sign in to Claude Code once with `claude`, then:
+`./start.sh` picks the account from one environment variable, `ANTHROPIC_API_KEY`, and says which it picked in its first line.
+
+With your Claude subscription (Pro or Max). Sign in to Claude Code once with `claude`, make sure no API key is set, then start:
 
 ```bash
+unset ANTHROPIC_API_KEY
 ./start.sh
 ```
 
-The turns count against your plan's usage limits; there is no separate bill.
+It prints `Agents: Claude Code, model sonnet, on your Claude Code login.` The turns count against your plan's usage limits; there is no separate bill.
 
-With an Anthropic API key, billed per token:
+With an Anthropic API key, billed per token. The variable must be named exactly `ANTHROPIC_API_KEY` (not `ANTHROPIC_KEY`) and must be exported, or set on the same line as the command:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... ./start.sh
+export ANTHROPIC_API_KEY=sk-ant-api03-...
+./start.sh
 ```
 
-Either way, `--model` picks the model (`sonnet` by default). The UI opens on `http://localhost:5173`, the API runs on `http://127.0.0.1:8321`. Every question goes through the huddle and the verifier.
+```bash
+ANTHROPIC_API_KEY=sk-ant-api03-... ./start.sh
+```
+
+In fish: `set -x ANTHROPIC_API_KEY sk-ant-api03-...`. It prints `Agents: Claude Code, model sonnet, billed to ANTHROPIC_API_KEY.` If it says `on your Claude Code login` instead, the key did not reach the script: `env | grep ANTHROPIC_API_KEY` prints nothing in that shell. A wrong or unfunded key shows its reason, such as `Invalid API key`, as the error of the question in the chat.
+
+Either way, `--model` picks the model (`sonnet` by default). The UI opens on `http://localhost:5173`, the API runs on `http://127.0.0.1:8321`. Every question goes through the huddle and the verifier. If either port is taken (`Port 5173 is already in use`), stop what holds it, such as another `npm run dev`, or pick other ports with `TWYF_UI_PORT` and `TWYF_PORT`.
 
 **2. The backend alone.** The API without the UI, for scripts or your own client: workspaces, files, agents, notes, sessions, questions and the context map.
 
