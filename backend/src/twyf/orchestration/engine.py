@@ -137,6 +137,7 @@ type ConnFactory = Callable[[], sqlite3.Connection]
 
 NO_FILES = "There are no files in this workspace yet."
 NOTHING_FOUND = "The files do not answer this question."
+NOT_READ = "Not read, because no text could be extracted from them:"
 named = inputs.named
 
 
@@ -822,6 +823,11 @@ class Engine:
                 q.answer_claims = [c.claim_id for c in claims]
             else:
                 q.answer_text = NO_FILES if mode == "no_files" else NOTHING_FOUND
+        unreadable = await self._db(lambda c: inputs.unreadable_names(c, q.workspace_id), write=False)
+        if unreadable:
+            # With no readable file the mode is no_files, but there are files: say only why none was read.
+            base = "" if mode == "no_files" else q.answer_text + "\n\n"
+            q.answer_text = f"{base}{NOT_READ} {', '.join(unreadable)}."
         return AnswerWritten()
 
     def _answer(self, conn: sqlite3.Connection, q: Q) -> None:

@@ -16,6 +16,7 @@ from tests.unit.orchestration.harness import (
     work,
 )
 from tests.unit.orchestration.harness import plan as plan_out
+from twyf.orchestration.engine import NOT_READ
 from twyf.runtime.base import RuntimeError_
 
 PRICES = "The price is 29.00 per kg.\n\nCost of goods is 13.05 per kg.\n\nRent rises by 8% each year."
@@ -202,4 +203,28 @@ async def test_no_files(harness: Any) -> None:
     ])  # fmt: skip
     assert [e.type for e in events] == ["started", "answer"]
     assert [r.turn_type for r in h.fake.requests] == ["write_answer"]
+    assert h.state(question_id) == "answered"
+
+
+async def test_unreadable_file_is_named_after_the_answer(harness: Any) -> None:
+    h: Harness = harness
+    f = h.upload("prices.txt", PRICES)
+    h.upload("scan.txt", " \n")
+    _, events = await h.ask("What is the price?", [
+        *opening(h, f),
+        step("draft_claims", {"claims": [quoted("k1", "The price is 29.00 per kg.", "29.00")]}),
+        step("verify", {"verdicts": [verdict("price is", "supported", ["29.00"])]}),
+        step("write_answer", segments(("The price is 29.00 per kg.", ["price is"]))),
+    ])  # fmt: skip
+    assert [f["name"] for f in h.turn_inputs("plan")[0]["files"]] == ["prices.txt"]
+    assert events[-1].text == f"The price is 29.00 per kg [1].\n\n{NOT_READ} scan.txt."
+
+
+async def test_only_unreadable_files(harness: Any) -> None:
+    h: Harness = harness
+    h.upload("scan.txt", " \n")
+    question_id, events = await h.ask("Anything?", [
+        step("write_answer", {"segments": [{"text": "There are no files in this workspace yet."}]}),
+    ])  # fmt: skip
+    assert events[-1].text == f"{NOT_READ} scan.txt."
     assert h.state(question_id) == "answered"

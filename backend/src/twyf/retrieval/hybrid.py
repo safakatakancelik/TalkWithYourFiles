@@ -103,9 +103,11 @@ class HybridRetriever:
         conn = self._connect()
         try:
             lists: list[list[int]] = []
+            used: list[str] = []  # the searches that ran, which is less than `mode` asks for without vectors
             if mode in ("keyword", "hybrid"):
                 found = keyword.search(conn, workspace_id=workspace_id, query=query, file_ids=file_ids, k=CANDIDATES)
                 lists.append([c for c, _ in found])
+                used.append("keyword")
             model = embeddings.find_model(conn, self.embedder) if self.embedder.dim else None
             if mode in ("vector", "hybrid") and model is not None:
                 [vector] = self.embedder.embed([query])
@@ -113,6 +115,7 @@ class HybridRetriever:
                     conn, workspace_id=workspace_id, model_id=model, query=vector, k=CANDIDATES, file_ids=file_ids
                 )
                 lists.append([c for c, _ in found])
+                used.append("vector")
             fused = rrf(lists)
             factor = boost if boost is not None else weights.passage_boost(conn, workspace_id)
             fused = {c: s * factor(c) for c, s in fused.items()}
@@ -121,7 +124,8 @@ class HybridRetriever:
             with transaction(conn):
                 record(
                     conn, ctx, "retrieval.searched", workspace_id=workspace_id, question_id=question_id, round_id=round_id,
-                    payload={"query": query, "mode": mode, "file_ids": file_ids, "chunk_ids": [p.chunk_id for p in result]},
+                    payload={"query": query, "mode": "hybrid" if len(used) == 2 else "".join(used) or "none",
+                             "file_ids": file_ids, "chunk_ids": [p.chunk_id for p in result]},
                 )  # fmt: skip
             return result
         finally:

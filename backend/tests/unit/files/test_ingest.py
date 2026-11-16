@@ -2,11 +2,13 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import EventsHelper, add_version, upload
 from twyf.config import Settings
 from twyf.contract.models import Workspace
 from twyf.contract.operations import GetFileTextInput, ListFilesInput
-from twyf.files.ingest import build_extraction, ingest, pending_ingestion
+from twyf.files.ingest import build_extraction, ingest, parse_again, pending_ingestion
 from twyf.files.parsers.base import ParsedBlock, ParsedDocument
 from twyf.recording.context import RequestContext
 from twyf.services import files, state
@@ -126,3 +128,28 @@ def test_pending_ingestion_and_resume(
     assert files.list(ctx, ListFilesInput(ws=ws.id))[0].status == "ready"
     shutil.rmtree(settings.data_dir / "files")
     ingest(state.connect, ctx.as_actor("system"), settings, fv)
+
+
+def test_no_text_is_unreadable_until_a_new_parser_reads_it(
+    ws: Workspace, ctx: RequestContext, conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item = upload(ctx, ws.id, "scan.txt", b" \n")
+    assert item.status == "unreadable"
+    fv = _fv(conn, item.id)
+    assert parse_again(conn, settings) == []  # the parser chosen now has tried it already
+
+    class Ocr:  # stands in for Docling reading a scanned page
+        name = "ocr_test"
+        version = "1"
+
+        def supports(self, file_type: str) -> bool:
+            return True
+
+        def parse(self, path: Path, file_type: str) -> list[ParsedDocument]:
+            return [ParsedDocument("ocr", [ParsedBlock("paragraph", "Page 1", "Read by OCR.")])]
+
+    monkeypatch.setattr("twyf.files.ingest.pick_parser", lambda settings, file_type: Ocr())
+    assert parse_again(conn, settings) == [fv]
+    ingest(state.connect, ctx.as_actor("system"), settings, fv)
+    assert files.list(ctx, ListFilesInput(ws=ws.id))[0].status == "ready"
+    assert parse_again(conn, settings) == []

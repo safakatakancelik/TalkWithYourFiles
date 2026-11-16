@@ -108,3 +108,16 @@ def pending_ingestion(conn: sqlite3.Connection) -> builtins.list[str]:
         " ORDER BY f.created_at"
     ).fetchall()
     return [r[0] for r in rows]
+
+
+def textless(conn: sqlite3.Connection) -> builtins.list[tuple[str, str, set[str]]]:
+    """Current versions of live files in live workspaces that were parsed but gave no text: each with its file
+    type and the parsers already tried."""
+    rows = conn.execute(
+        "SELECT f.file_version_id, f.file_type, group_concat(x.parser) FROM v_files f"
+        " JOIN v_workspaces w ON w.id = f.workspace_id JOIN extractions x ON x.file_version_id = f.file_version_id"
+        " WHERE NOT EXISTS (SELECT 1 FROM chunks c JOIN extractions y ON y.id = c.extraction_id"
+        "                   WHERE y.file_version_id = f.file_version_id)"
+        " GROUP BY f.file_version_id ORDER BY f.created_at"
+    ).fetchall()
+    return [(r[0], r[1], set(r[2].split(","))) for r in rows]

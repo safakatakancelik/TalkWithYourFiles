@@ -22,6 +22,16 @@ def usable_ready_files(conn: sqlite3.Connection, workspace_id: str) -> list[sqli
     return [r for r in rows if files_repo.status(conn, r["file_version_id"], r["availability"]) == "ready"]
 
 
+def unreadable_names(conn: sqlite3.Connection, workspace_id: str) -> list[str]:
+    """Names of live files that gave no text. Agents never see them; the answer says they were not read."""
+    rows = conn.execute(
+        "SELECT f.* FROM v_usable_files f JOIN files raw ON raw.id = f.id WHERE f.workspace_id = ?"
+        " ORDER BY f.created_at, raw.rowid",
+        (workspace_id,),
+    ).fetchall()
+    return [r["name"] for r in rows if files_repo.status(conn, r["file_version_id"], r["availability"]) == "unreadable"]
+
+
 def file_infos(conn: sqlite3.Connection, workspace_id: str, rows: list[sqlite3.Row]) -> list[FileInfo]:
     return [
         FileInfo(

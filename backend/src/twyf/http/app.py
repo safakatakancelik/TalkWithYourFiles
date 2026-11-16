@@ -31,12 +31,11 @@ from twyf.contract.operations import (
 )
 from twyf.db.connection import transaction
 from twyf.db.migrate import migrate
-from twyf.db.repos import embeddings
 from twyf.db.repos import files as files_repo
 from twyf.db.repos import workspaces as workspaces_repo
 from twyf.files.describe import describe_image
 from twyf.files.first_read import first_read
-from twyf.files.ingest import ingest, pending_ingestion
+from twyf.files.ingest import ingest, parse_again, pending_ingestion
 from twyf.files.jobs import Jobs, ThreadJobs
 from twyf.http import errors, sse
 from twyf.http.context import LOCAL_USER, context_from_request, request_id
@@ -176,10 +175,11 @@ def _startup(settings: Settings, jobs: Jobs) -> None:
                    config_version_id=config_id)  # fmt: skip
         if not workspaces_repo.list(conn, LOCAL_USER):
             workspaces.create(system, CreateWorkspaceInput(name=FIRST_WORKSPACE))
-        for file_version_id in pending_ingestion(conn):
+        for file_version_id in pending_ingestion(conn) + parse_again(conn, settings):
             jobs.submit(lambda fv=file_version_id: ingest(state.connect, system, settings, fv))
+        # Every start: vectors for chunks and notes that have none, such as those added while fastembed was missing.
         embedder = get_embedder(settings)
-        if embedder.dim and embeddings.find_model(conn, embedder) is None:
+        if embedder.dim:
             jobs.submit(lambda: log.info("re-embedded %d", reembed(state.connect, system, embedder)))
 
 

@@ -5,8 +5,10 @@ from twyf.config import Settings
 from twyf.contract.models import Workspace
 from twyf.recording.context import RequestContext
 from twyf.retrieval import keyword
+from twyf.retrieval.embedder import NullEmbedder
 from twyf.retrieval.fusion import rrf
 from twyf.retrieval.hybrid import HybridRetriever, first_chunks
+from twyf.retrieval.vector_index import SqliteVecIndex
 
 
 def _file_of(conn: sqlite3.Connection, chunk_id: int) -> str:
@@ -99,3 +101,14 @@ def test_keyword_mode_and_first_chunks(
         settings.model_copy(update={"retrieval_mode": "keyword"}), NullEmbedder(), NumpyIndex()
     )
     assert keyword_only.search(ctx, workspace_id=ws.id, query="Section filler", file_ids=[item.id], k=3)
+
+
+def test_without_vectors_the_search_is_recorded_as_keyword(
+    ws: Workspace, ctx: RequestContext, settings: Settings, events: EventsHelper
+) -> None:
+    upload(ctx, ws.id, "a.txt", b"Payment terms are thirty days.")
+    retriever = HybridRetriever(settings, NullEmbedder(), SqliteVecIndex())
+    [found] = retriever.search(ctx, workspace_id=ws.id, query="payment terms", file_ids=None, k=1)
+    assert "thirty days" in found.text
+    [searched] = events("retrieval.searched")
+    assert searched.payload["mode"] == "keyword"

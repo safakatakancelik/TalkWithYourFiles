@@ -145,3 +145,13 @@ def ingest(conn_factory: ConnFactory, ctx: RequestContext, settings: Settings, f
 
 def pending_ingestion(conn: sqlite3.Connection) -> list[str]:
     return extractions.pending_ingestion(conn)
+
+
+def parse_again(conn: sqlite3.Connection, settings: Settings) -> list[str]:
+    """Versions that gave no text and that the parser now chosen has not tried, such as a scanned PDF once
+    Docling is installed."""
+    return [
+        file_version_id
+        for file_version_id, file_type, tried in extractions.textless(conn)
+        if (parser := pick_parser(settings, file_type)) is not None and parser.name not in tried
+    ]

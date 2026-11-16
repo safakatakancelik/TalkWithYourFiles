@@ -81,19 +81,19 @@ def uploaded_at(conn: sqlite3.Connection, file_version_id: str) -> str:
 
 
 def status(conn: sqlite3.Connection, file_version_id: str, availability: str) -> FileStatus:
-    """missing or changed from the availability check; else ready once indexed, unreadable when no extraction
-    succeeded, and processing until then."""
+    """missing or changed from the availability check; else ready once indexed with text, unreadable when no
+    extraction succeeded or the latest indexing found no text, and processing until then."""
     if availability == "missing":
         return "missing"
     if availability == "changed":
         return "changed"
     indexed = conn.execute(
-        "SELECT 1 FROM app_events WHERE event_type = 'file.indexed' AND entity_type = 'file'"
-        " AND json_extract(payload, '$.file_version_id') = ? LIMIT 1",
+        "SELECT json_extract(payload, '$.chunks') FROM app_events WHERE event_type = 'file.indexed'"
+        " AND entity_type = 'file' AND json_extract(payload, '$.file_version_id') = ? ORDER BY id DESC LIMIT 1",
         (file_version_id,),
     ).fetchone()
     if indexed is not None:
-        return "ready"
+        return "ready" if indexed[0] else "unreadable"
     extractions = conn.execute(
         "SELECT COUNT(*), SUM(status = 'ok') FROM extractions WHERE file_version_id = ?", (file_version_id,)
     ).fetchone()
