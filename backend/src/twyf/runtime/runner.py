@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from twyf import logging_setup
 from twyf.agents.definitions import current_version, load_folder
 from twyf.agents.prompts import render
 from twyf.config import Settings
@@ -73,6 +74,7 @@ class TurnRunner:
                 retry_of, question_id, round_id, rules, turn_id,
             )  # fmt: skip
             started = time.monotonic()
+            logging_setup.turn_id.set(turn_id)
             try:
                 async with asyncio.timeout(self.settings.turn_timeout_s):
                     result = await self.runtime.run_turn(request)

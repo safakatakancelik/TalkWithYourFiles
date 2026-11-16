@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError, create_model
 from pydantic.alias_generators import to_camel
 
-from twyf import __version__
+from twyf import __version__, logging_setup
 from twyf.agents.definitions import sync, sync_config
 from twyf.config import Settings
 from twyf.contract.base import Wire
@@ -232,7 +232,11 @@ def build_app(settings: Settings, runtime: AgentRuntime | None = None, jobs: Job
     @app.middleware("http")
     async def add_request_id(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         rid = request_id(request)
-        response = await call_next(request)
+        token = logging_setup.request_id.set(rid)
+        try:
+            response = await call_next(request)
+        finally:
+            logging_setup.request_id.reset(token)
         response.headers["X-Request-Id"] = rid
         return response
 

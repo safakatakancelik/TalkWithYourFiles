@@ -5,3 +5,4 @@ backend/.venv/
 __pycache__/
 .coverage
 coverage.json
+evals/reports/*.json

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from twyf import logging_setup
 from twyf.citations.check import check
 from twyf.citations.locate import create_citation, try_quote
 from twyf.config import Settings
@@ -239,6 +240,8 @@ class Engine:
             self.running[question_id].cancel_ctx = ctx
 
     async def run(self, ctx: RequestContext, question_id: str) -> None:
+        logging_setup.question_id.set(question_id)
+        logging_setup.request_id.set(ctx.request_id)
         q = await self._db(lambda c: self._load(c, ctx, question_id), write=False)
         self.running[question_id] = q
         state = QState(
