@@ -179,8 +179,11 @@ def test_reverted_config_is_recorded(conn: sqlite3.Connection, settings: Setting
 
 
 def _tick() -> str:
+    """A time strictly after the last change and strictly before the next one (the clock counts milliseconds)."""
     time.sleep(0.002)
-    return clock.now()
+    at = clock.now()
+    time.sleep(0.002)
+    return at
 
 
 def test_type2_history_definitions(conn: sqlite3.Connection, local: Settings, agents_dir: Path) -> None:
