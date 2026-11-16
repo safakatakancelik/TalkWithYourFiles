@@ -11,12 +11,12 @@ BASIC: list[Parser] = [TextParser(), CsvParser(), PdfBasicParser(), DocxBasicPar
 
 
 def _docling() -> Parser | None:
-    """The Docling parser, when it and its module (task B37) are installed."""
-    if importlib.util.find_spec("docling") is None or importlib.util.find_spec("twyf.files.parsers.docling") is None:
+    """The Docling parser, when the rich extra is installed."""
+    if importlib.util.find_spec("docling") is None:
         return None
-    module = importlib.import_module("twyf.files.parsers.docling")
-    parser: Parser = module.DoclingParser()
-    return parser
+    from twyf.files.parsers.docling import DoclingParser
+
+    return DoclingParser()
 
 
 def pick_parser(settings: Settings, file_type: str) -> Parser | None:

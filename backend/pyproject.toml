@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-rich = ["docling", "fastembed"]
+rich = ["docling-slim[standard]", "fastembed", "torch", "torchvision"]
 
 [project.scripts]
 twyf = "twyf.cli:main"
@@ -58,3 +58,14 @@ target-version = "py313"
 include = ["src"]
 typeCheckingMode = "strict"
 pythonVersion = "3.13"
+
+# Docling's layout and OCR models run on torch. The CPU-only builds are a fraction of the default Linux ones,
+# which bundle the CUDA libraries for a GPU this project does not use.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

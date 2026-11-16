@@ -1,8 +1,11 @@
 import hashlib
+import importlib
+import importlib.metadata
+import importlib.util
 import logging
 import math
 import re
-from typing import Protocol
+from typing import Any, Protocol
 
 from twyf.config import Settings
 
@@ -38,6 +41,28 @@ class HashEmbedder:
         return out
 
 
+class FastEmbedEmbedder:
+    """The default: a local ONNX model through fastembed, by default BAAI/bge-small-en-v1.5 (384 dimensions).
+
+    Optional: installed with `uv sync --extra rich`. The model is downloaded from Hugging Face on first use."""
+
+    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5") -> None:
+        self.name = model_name
+        self.version = importlib.metadata.version("fastembed")
+        self._model: Any = importlib.import_module("fastembed").TextEmbedding(model_name)
+        self.dim = len(self._raw(["dimension probe"])[0])
+
+    def _raw(self, texts: list[str]) -> list[list[float]]:
+        return [[float(x) for x in vector] for vector in self._model.embed(texts)]
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        out: list[list[float]] = []
+        for vector in self._raw(texts):
+            norm = math.sqrt(sum(v * v for v in vector))
+            out.append([v / norm for v in vector] if norm else vector)
+        return out
+
+
 class NullEmbedder:
     """`TWYF_EMBEDDER=none`: no vectors, keyword search only."""
 
@@ -64,6 +89,7 @@ def _make(settings: Settings) -> Embedder:
         return HashEmbedder()
     if settings.embedder == "none":
         return NullEmbedder()
-    # FastEmbedEmbedder is written in task B37. Until then the default embedder searches by keyword only.
-    log.warning("the fastembed embedder is not available: search is by keyword only")
-    return NullEmbedder()
+    if importlib.util.find_spec("fastembed") is None:
+        log.warning("fastembed is not installed (uv sync --extra rich): search is by keyword only")
+        return NullEmbedder()
+    return FastEmbedEmbedder(settings.embed_model)
