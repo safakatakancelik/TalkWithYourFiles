@@ -1,5 +1,17 @@
 # Talk With Your Files
 
+## Contents
+
+- [Start](#start)
+  - [Three ways to use it](#three-ways-to-use-it)
+  - [Options](#options)
+  - [Without the start script](#without-the-start-script)
+- [Use the app from an agent harness (MCP)](#use-the-app-from-an-agent-harness-mcp)
+- [Let a harness do the agent work (queue runtime)](#let-a-harness-do-the-agent-work-queue-runtime)
+- [How it works](#how-it-works)
+- [Documentation](#documentation)
+- [License](#license)
+
 Have a conversation with your files. You add files to a workspace and ask questions about them in a chat. A huddle of agents works out the answer together, a verifier checks every claim against the exact passages it cites, and only verified claims reach you, each with its citations.
 
 Revision 2 has a Python backend (`backend/`), a React UI (`frontend/`) and an MCP server, so any agent harness that speaks MCP (Claude Code, Codex, opencode, ...) can use the app and can also do its agent work.
