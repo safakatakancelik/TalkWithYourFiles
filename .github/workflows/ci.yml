@@ -28,4 +28,11 @@ jobs:
         working-directory: backend
       - run: uv run twyf export-contract
         working-directory: backend
-      - run: git diff --exit-code contract/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run gen:contract
+        working-directory: frontend
+      - run: git diff --exit-code contract/ frontend/src/backend/contract.gen.ts

@@ -1,7 +1,7 @@
 import { DEMO_QUESTION, DEMO_WORKSPACE, demoScript, demoWorkspace } from '../demo/scenario';
 import type { ScriptStep } from '../demo/scenario';
 import { ORCHESTRATOR } from './types';
-import type { Agent, Backend, ChatMsg, Citation, ContextMap, FileItem, FileType, Note, Session } from './types';
+import type { Agent, Backend, ChatMsg, Citation, ContextMap, FileItem, FileType, Note, Session, Workspace } from './types';
 
 // An in-memory backend. Nothing is saved and nothing leaves the browser.
 
@@ -44,6 +44,11 @@ interface WsData {
 const pool = (): Agent[] => [1, 2].map((n) => ({ id: `a-t${n}`, name: `Translator ${n}`, specialty: 'generic' }));
 const empty = (): WsData => ({ files: [], agents: pool(), notes: [], sessions: [], map: { nodes: [], links: [] }, messages: {} });
 const data: Record<string, WsData> = { mine: empty(), demo: structuredClone(demoWorkspace) };
+const workspaces: Workspace[] = [{ id: 'mine', name: 'My workspace' }, DEMO_WORKSPACE];
+
+const editable = (ws: string) => {
+  if (ws === DEMO_WORKSPACE.id) throw new Error('The demo workspace cannot be changed.');
+};
 
 export function resetDemo() {
   data.demo = structuredClone(demoWorkspace);
@@ -59,7 +64,7 @@ const typeOf = (name: string): FileType => TYPES.find((t) => name.toLowerCase().
 /** A simulated huddle for any question that is not the demo question. */
 function genericScript(ws: WsData, question: string): ScriptStep[] {
   if (!ws.files.length) {
-    return [{ delay: 600, event: { type: 'answer', citations: [], placeholder: true,
+    return [{ delay: 0, event: { type: 'started', questionId: uid('q') } }, { delay: 600, event: { type: 'answer', citations: [], placeholder: true,
       text: 'There are no files in this workspace yet. Upload some in the explorer (E), or run the demo.' } }];
   }
   const q = question.toLowerCase();
@@ -73,6 +78,7 @@ function genericScript(ws: WsData, question: string): ScriptStep[] {
     quote: 'Placeholder passage.',
   }));
   return [
+    { delay: 0, event: { type: 'started', questionId: uid('q') } },
     { delay: 800, event: { type: 'broadcast', to: ws.agents.map((a) => a.id), text: `Who can help with: "${question}"?` } },
     ...joined.map((a): ScriptStep => ({ delay: 900, event: { type: 'join', agentId: a.id, how: 'volunteered' } })),
     ...work.flatMap(({ f, a }, i): ScriptStep[] => {
@@ -94,7 +100,30 @@ function genericScript(ws: WsData, question: string): ScriptStep[] {
 }
 
 export const mockBackend: Backend = {
-  listWorkspaces: () => copy([{ id: 'mine', name: 'My workspace' }, DEMO_WORKSPACE]),
+  listWorkspaces: () => copy(workspaces),
+
+  createWorkspace(name) {
+    const workspace = { id: uid('ws'), name };
+    workspaces.push(workspace);
+    data[workspace.id] = empty();
+    return copy(workspace);
+  },
+
+  renameWorkspace(ws, name) {
+    editable(ws);
+    const workspace = workspaces.find((w) => w.id === ws);
+    if (!workspace) throw new Error('No such workspace');
+    workspace.name = name;
+    return copy(workspace);
+  },
+
+  async deleteWorkspace(ws) {
+    editable(ws);
+    const at = workspaces.findIndex((w) => w.id === ws);
+    if (at < 0) throw new Error('No such workspace');
+    workspaces.splice(at, 1);
+    delete data[ws];
+  },
   listFiles: (ws) => copy(data[ws].files),
   listAgents: (ws) => copy(data[ws].agents),
   listSessions: (ws) => copy([...data[ws].sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))),
@@ -120,8 +149,34 @@ export const mockBackend: Backend = {
     data[ws].map.nodes.push({ id, label: name, kind: 'file' });
   },
 
+  async addFileVersion(ws, fileId, { name, size }) {
+    // The file keeps its id and its notes. It takes the new name and size, and its version goes up by one.
+    const f = data[ws].files.find((x) => x.id === fileId);
+    if (!f) throw new Error('No such file');
+    Object.assign(f, { name, sizeKb: Math.max(1, Math.round(size / 1024)), uploadedAt: new Date().toISOString(), version: (f.version ?? 1) + 1 });
+    const node = data[ws].map.nodes.find((n) => n.id === fileId);
+    if (node) node.label = name;
+  },
+
+  async deleteFile(ws, fileId) {
+    const d = data[ws];
+    d.files = d.files.filter((f) => f.id !== fileId);
+    d.notes = d.notes.filter((n) => n.fileId !== fileId);
+    d.map.nodes = d.map.nodes.filter((n) => n.id !== fileId);
+    d.map.links = d.map.links.filter((l) => l.from !== fileId);
+  },
+
   async createAgent(ws, { name, specialty }) {
     data[ws].agents.push({ id: uid('a'), name, specialty });
+  },
+
+  async renameAgent(ws, agentId, name) {
+    const agent = data[ws].agents.find((a) => a.id === agentId);
+    if (agent) agent.name = name;
+  },
+
+  async deleteAgent(ws, agentId) {
+    data[ws].agents = data[ws].agents.filter((a) => a.id !== agentId);
   },
 
   async addNote(ws, { fileId, text }) {
@@ -129,6 +184,27 @@ export const mockBackend: Backend = {
       id: uid('n'), fileId, authorId: 'user', kind: 'interpretation', text, citations: [],
       createdAt: new Date().toISOString(), weight: 'normal',
     });
+  },
+
+  async editNote(ws, noteId, text) {
+    const n = data[ws].notes.find((x) => x.id === noteId);
+    if (!n) throw new Error('No such note');
+    if (n.authorId !== 'user') throw new Error('Only a note written by the user can be edited.');
+    n.text = text;
+  },
+
+  async deleteNote(ws, noteId) {
+    data[ws].notes = data[ws].notes.filter((n) => n.id !== noteId);
+  },
+
+  async renameSession(ws, sessionId, title) {
+    const session = data[ws].sessions.find((s) => s.id === sessionId);
+    if (session) session.title = title;
+  },
+
+  async deleteSession(ws, sessionId) {
+    data[ws].sessions = data[ws].sessions.filter((s) => s.id !== sessionId);
+    delete data[ws].messages[sessionId];
   },
 
   async *ask(ws, sessionId, question, signal) {
