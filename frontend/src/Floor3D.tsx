@@ -15,7 +15,10 @@ const MAX_IN_BUCKET = 42;
 const PER_LAYER = 14;
 const BUCKET_R = 1.5;
 const BUCKET_H = 0.7;
-/** Members stand on the inner ring around the bucket, idle translators on the outer one behind it. */
+/**
+ * Members stand on the inner ring around the bucket; everyone else waits on the outer ring, so the huddle is empty
+ * until a question starts. Translators wait behind the bucket, the orchestrator and the verifier at the front corners.
+ */
 const RING_IN = 2.8;
 const RING_IDLE = 4.4;
 
@@ -41,6 +44,8 @@ const at = (r: number, deg: number): Vec => {
   const a = (deg * Math.PI) / 180;
   return [Math.cos(a) * r, 0, Math.sin(a) * r];
 };
+const ORCHESTRATOR_WAITS = at(4.2, 135);
+const VERIFIER_WAITS = at(4.2, 45);
 
 const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 /** Fraction of the way to move towards a target this frame. Reduced motion snaps. */
@@ -100,14 +105,13 @@ export default function Floor3D(props: Props) {
 }
 
 function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, palette }: Props & { palette: Palette }) {
-  const { members, working } = huddle;
-  const active = members.length > 0;
+  const { active, members, working } = huddle;
   const idle = agents.filter((a) => !members.includes(a.id));
   const shown = agents.length > MAX_SHOWN ? idle.slice(0, Math.max(0, MAX_SHOWN - 1 - members.length)) : idle;
   const hidden = idle.length - shown.length;
   const slots = shown.length + (hidden ? 1 : 0);
 
-  // Idle translators spread over the back arc; members close the circle around the bucket, leaving the front to the orchestrator.
+  // Idle translators spread over the back arc; members close the circle around the bucket, leaving the front to the orchestrator and the verifier.
   const idleSpot = (i: number) => at(RING_IDLE, 180 + (180 * (i + 0.5)) / Math.max(slots, 1));
   const spots = new Map<string, Vec>();
   for (const a of agents) {
@@ -115,8 +119,9 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
     if (j >= 0) spots.set(a.id, at(RING_IN, 130 + (280 * (j + 0.5)) / members.length));
     else if (shown.includes(a)) spots.set(a.id, idleSpot(shown.indexOf(a)));
   }
-  const orchestrator = active ? at(RING_IN, 90) : at(3.8, 90);
-  const verifier = huddle.verifier ? at(RING_IN, 64) : at(3.9, 70);
+  // A question brings the orchestrator to the bucket first; the verifier steps in to check the claims.
+  const orchestrator = active ? at(RING_IN, 90) : ORCHESTRATOR_WAITS;
+  const verifier = huddle.verifier ? at(RING_IN, 64) : VERIFIER_WAITS;
 
   const fileName = (id: string) => files.find((f) => f.id === id)?.name ?? id;
   const holder = (fileId: string) => Object.keys(working).find((a) => working[a] === fileId);
@@ -179,7 +184,7 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
   );
 }
 
-/** The huddle: an open cylinder holding the session's files. It lights up while a question is being discussed. */
+/** The bucket: an open cylinder holding the session's files. While a question is worked on it lights up and the huddle ring shows around it. */
 function Bucket({ active, palette, count }: { active: boolean; palette: Palette; count: number }) {
   const wall = active ? palette.accent : palette.muted;
   return (
@@ -196,6 +201,7 @@ function Bucket({ active, palette, count }: { active: boolean; palette: Palette;
         <circleGeometry args={[BUCKET_R * 0.92, 64]} />
         <meshStandardMaterial color={active ? palette.soft : palette.line} />
       </mesh>
+      <HuddleRing active={active} color={palette.accent} />
       <Html position={[0, 0, BUCKET_R + 0.35]} center zIndexRange={[20, 0]}>
         <span className="tag3d">{active ? 'huddle' : `huddle · ${count} file${count === 1 ? '' : 's'}`}</span>
       </Html>
@@ -300,6 +306,24 @@ function Figure({ role, target, lit, faded, palette, title, onClick, bubble, bub
           : <div className="label3d" title={title}>{children}</div>}
       </Html>
     </group>
+  );
+}
+
+/** The ring the huddle stands on. It fades in when a question starts and out when the huddle ends. */
+function HuddleRing({ active, color }: { active: boolean; color: string }) {
+  const ref = useRef<Mesh>(null);
+  useFrame((_, dt) => {
+    const m = ref.current;
+    if (!m) return;
+    const mat = m.material as MeshBasicMaterial;
+    mat.opacity += ((active ? 0.7 : 0) - mat.opacity) * ease(dt, 3);
+    m.visible = mat.opacity > 0.01;
+  });
+  return (
+    <mesh ref={ref} position-y={0.02} rotation-x={-Math.PI / 2}>
+      <ringGeometry args={[RING_IN - 0.05, RING_IN + 0.05, 128]} />
+      <meshBasicMaterial color={color} transparent opacity={0} depthWrite={false} />
+    </mesh>
   );
 }
 

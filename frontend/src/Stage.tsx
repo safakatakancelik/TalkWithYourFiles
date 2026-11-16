@@ -9,6 +9,8 @@ export interface LogEntry {
 }
 
 export interface Huddle {
+  /** A question is being worked on: the orchestrator is at the bucket, from the first event to the end of the huddle. */
+  active: boolean;
   members: string[];
   /** Which file each translator has been given for this question: agent id to file id. */
   working: Record<string, string>;

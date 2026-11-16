@@ -12,7 +12,7 @@ import type { Huddle } from './Stage';
 import { clock, resetDemo } from './backend/mock';
 import { DEMO_QUESTION, DEMO_WORKSPACE } from './demo/scenario';
 
-const emptyHuddle: Huddle = { members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [], verifier: null };
+const emptyHuddle: Huddle = { active: false, members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [], verifier: null };
 /** The backend's default TWYF_MAX_VERIFY_ROUNDS. The events do not carry it. */
 const MAX_ROUNDS = 3;
 const MODES: ChatMode[] = ['bar', 'half', 'full'];
@@ -100,6 +100,7 @@ export default function App() {
     const log = (h: Huddle, who: string, text: string, citations?: Citation[]) => [...h.log, { who, text, citations }];
     switch (ev.type) {
       case 'started':
+        setHuddle((h) => ({ ...h, active: true }));
         break;
       case 'status':
         patch({ status: ev.text });
@@ -152,21 +153,22 @@ export default function App() {
         setHuddle((h) => ({ ...h, log: log(h, 'system', `Round ${ev.round} of ${MAX_ROUNDS}`) }));
         break;
       case 'leave':
-        setHuddle((h) => ({ ...h, members: h.members.filter((m) => !ev.agentIds.includes(m)), working: {}, bubble: null, reading: null, verifier: null, log: log(h, 'system', 'The huddle ended') }));
+        setHuddle((h) => ({ ...h, active: false, members: h.members.filter((m) => !ev.agentIds.includes(m)), working: {}, bubble: null, reading: null, verifier: null, log: log(h, 'system', 'The huddle ended') }));
         break;
       case 'context':
         setMap((m) => ({ nodes: [...m.nodes, ...ev.nodes], links: [...m.links, ...ev.links] }));
         break;
       case 'answer':
         patch({ text: ev.text, citations: ev.citations, placeholder: ev.placeholder, unverified: ev.unverified, pending: false, status: undefined });
+        setHuddle((h) => ({ ...h, active: false }));
         break;
       case 'error':
         patch({ error: ev.message, pending: false, status: undefined });
-        setHuddle((h) => ({ ...h, members: [], working: {}, bubble: null, reading: null, verifier: null }));
+        setHuddle((h) => ({ ...h, active: false, members: [], working: {}, bubble: null, reading: null, verifier: null }));
         break;
       case 'cancelled':
         patch({ text: 'The question was cancelled.', pending: false, status: undefined });
-        setHuddle((h) => ({ ...h, members: [], working: {}, bubble: null, reading: null, verifier: null }));
+        setHuddle((h) => ({ ...h, active: false, members: [], working: {}, bubble: null, reading: null, verifier: null }));
         break;
     }
   };
