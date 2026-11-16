@@ -12,14 +12,23 @@ The backend never calls a model itself. With `./start.sh`, each agent turn runs 
 
 ### Three ways to use it
 
-**1. The app, as an end user.** The chat UI with the agents behind it.
+**1. The app, as an end user.** The chat UI with the agents behind it. The agents run on one of two accounts.
+
+With your Claude subscription (Pro or Max). Sign in to Claude Code once with `claude`, then:
 
 ```bash
-./start.sh                                    # on your Claude Code login
-ANTHROPIC_API_KEY=sk-... ./start.sh           # billed to an API key
+./start.sh
 ```
 
-The UI opens on `http://localhost:5173`, the API runs on `http://127.0.0.1:8321`. Every question goes through the huddle and the verifier.
+The turns count against your plan's usage limits; there is no separate bill.
+
+With an Anthropic API key, billed per token:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... ./start.sh
+```
+
+Either way, `--model` picks the model (`sonnet` by default). The UI opens on `http://localhost:5173`, the API runs on `http://127.0.0.1:8321`. Every question goes through the huddle and the verifier.
 
 **2. The backend alone.** The API without the UI, for scripts or your own client: workspaces, files, agents, notes, sessions, questions and the context map.
 
