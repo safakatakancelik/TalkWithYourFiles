@@ -41,7 +41,7 @@ class HashEmbedder:
         return out
 
 
-class FastEmbedEmbedder:
+class FastEmbedEmbedder:  # pragma: no cover -- needs the rich extra and a model; tested with -m models
     """The default: a local ONNX model through fastembed, by default BAAI/bge-small-en-v1.5 (384 dimensions).
 
     Optional: installed with `uv sync --extra rich`. The model is downloaded from Hugging Face on first use."""

@@ -50,6 +50,13 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = '-m "not models"'
 markers = ["models: needs Docling or fastembed models (run by hand)"]
 
+[tool.coverage.run]
+# Docling is optional (the rich extra) and needs models: tested by hand with -m models.
+omit = ["src/twyf/files/parsers/docling.py"]
+
+[tool.coverage.report]
+exclude_also = ["if __name__ == .__main__.:"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py313"

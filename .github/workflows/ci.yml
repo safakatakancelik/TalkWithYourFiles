@@ -17,7 +17,22 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run pyright
-      - run: uv run pytest --cov=twyf --cov-branch --cov-fail-under=90
+      - run: uv run pytest --cov=twyf --cov-branch --cov-report=json --cov-fail-under=90
+      - run: uv run python scripts/check_coverage.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
 
   contract:
     runs-on: ubuntu-latest
