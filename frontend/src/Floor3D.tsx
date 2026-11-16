@@ -19,9 +19,13 @@ const BUCKET_H = 0.7;
 const RING_IN = 2.8;
 const RING_IDLE = 4.4;
 
-/** Figures keep light bodies in both themes, so they stand out on a dark floor too. */
-const BODY = '#d4d7dc';
-const VERIFIER_BODY = '#b9ddd8';
+/** Each kind of agent has its own shape and colour. Translators are alike; the orchestrator and the verifier stand out. */
+type Role = 'translator' | 'orchestrator' | 'verifier';
+const ROLE_COLOR: Record<Role, { light: string; dark: string }> = {
+  translator: { light: '#d4d7dc', dark: '#b6bcc4' },
+  orchestrator: { light: '#2f6f6a', dark: '#4fa79e' },
+  verifier: { light: '#c98a1b', dark: '#e0aa45' },
+};
 
 const TYPE_COLOR: Record<FileType, string> = {
   pdf: '#e0796c', docx: '#6f97d6', csv: '#6dba7a', md: '#a585d6', txt: '#c9c4b8', image: '#e0b25c', other: '#b0b4bb',
@@ -47,7 +51,10 @@ function usePalette() {
   const read = () => {
     const s = getComputedStyle(document.documentElement);
     const v = (n: string) => s.getPropertyValue(n).trim();
-    return { accent: v('--accent'), text: v('--text'), surface: v('--surface'), line: v('--line'), muted: v('--muted'), soft: v('--soft') };
+    return {
+      accent: v('--accent'), text: v('--text'), surface: v('--surface'), line: v('--line'), muted: v('--muted'), soft: v('--soft'),
+      dark: document.documentElement.dataset.theme === 'dark',
+    };
   };
   const [palette, setPalette] = useState(read);
   useEffect(() => {
@@ -139,7 +146,7 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
       })}
 
       {agents.filter((a) => spots.has(a.id)).map((a) => (
-        <Figure key={a.id} target={spots.get(a.id)!} color={BODY} edge={palette.text} lit={litAgent === a.id} palette={palette}
+        <Figure key={a.id} role="translator" target={spots.get(a.id)!} lit={litAgent === a.id} palette={palette}
           onClick={() => onAgent(a.id)} title={a.name}
           bubble={huddle.bubble?.agentId === a.id ? huddle.bubble.text : huddle.reading === a.id ? `reading ${fileName(working[a.id])}…` : null}
           bubbleReading={huddle.reading === a.id && huddle.bubble?.agentId !== a.id}>
@@ -149,18 +156,18 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
       ))}
 
       {hidden > 0 && (
-        <Figure target={idleSpot(shown.length)} color={BODY} edge={palette.muted} faded palette={palette} onClick={onMore} title={`${hidden} more translators`}>
+        <Figure role="translator" target={idleSpot(shown.length)} faded palette={palette} onClick={onMore} title={`${hidden} more translators`}>
           <span className="label">+{hidden} more</span>
         </Figure>
       )}
 
-      <Figure target={orchestrator} color={palette.accent} edge={palette.accent} palette={palette} title="Orchestrator" bubbleSide
+      <Figure role="orchestrator" target={orchestrator} palette={palette} title="Orchestrator"
         bubble={huddle.bubble?.agentId === ORCHESTRATOR ? huddle.bubble.text : null}>
         <span className="label strong">Orchestrator</span>
       </Figure>
       {huddle.pulse > 0 && <Pulse key={huddle.pulse} from={orchestrator} color={palette.accent} />}
 
-      <Figure target={verifier} color={VERIFIER_BODY} edge={palette.accent} palette={palette} title="Verifier">
+      <Figure role="verifier" target={verifier} palette={palette} title="Verifier">
         <span className="label strong">
           Verifier
           {huddle.verifier && huddle.verifier.state !== 'checking' && (
@@ -230,10 +237,13 @@ function FileCard({ file, rest, hand, lit, reading, palette, onClick }: {
   );
 }
 
-/** A person: a capsule body and a round head, gliding to its spot and facing the bucket. */
-function Figure({ target, color, edge, lit, faded, palette, title, onClick, bubble, bubbleReading, bubbleSide, children }: {
-  target: Vec; color: string; edge: string; lit?: boolean; faded?: boolean; palette: Palette; title: string;
-  onClick?: () => void; bubble?: string | null; bubbleReading?: boolean; bubbleSide?: boolean; children: ReactNode;
+/**
+ * An agent, gliding to its spot and facing the bucket. A translator is a capsule with a round head; the orchestrator is
+ * taller, in a robe, with a halo turning over its head; the verifier is a hexagonal block with a faceted head.
+ */
+function Figure({ role, target, lit, faded, palette, title, onClick, bubble, bubbleReading, children }: {
+  role: Role; target: Vec; lit?: boolean; faded?: boolean; palette: Palette; title: string;
+  onClick?: () => void; bubble?: string | null; bubbleReading?: boolean; children: ReactNode;
 }) {
   const ref = useRef<Group>(null);
   const goal = useMemo(() => new Vector3(...target), [target[0], target[1], target[2]]);
@@ -250,26 +260,39 @@ function Figure({ target, color, edge, lit, faded, palette, title, onClick, bubb
     onPointerOver: () => { document.body.style.cursor = 'pointer'; },
     onPointerOut: () => { document.body.style.cursor = ''; },
   };
-  const material = <meshStandardMaterial color={color} emissive={lit ? palette.accent : '#000000'} emissiveIntensity={lit ? 0.6 : 0} transparent={faded} opacity={faded ? 0.5 : 1} />;
+  const color = ROLE_COLOR[role][palette.dark ? 'dark' : 'light'];
+  const material = <meshStandardMaterial color={color} emissive={lit ? palette.accent : '#000000'} emissiveIntensity={lit ? 0.6 : 0} transparent={faded} opacity={faded ? 0.5 : 1} flatShading={role === 'verifier'} />;
+  const top = role === 'orchestrator' ? 1.75 : 1.3;
   return (
     <group ref={ref} position={target}>
       <group {...pointer}>
-        <mesh position-y={0.5}>
-          <capsuleGeometry args={[0.2, 0.42, 6, 16]} />
-          {material}
-        </mesh>
-        <mesh position-y={1.02}>
-          <sphereGeometry args={[0.16, 24, 16]} />
-          {material}
-        </mesh>
+        {role === 'translator' && (
+          <>
+            <mesh position-y={0.5}><capsuleGeometry args={[0.2, 0.42, 6, 16]} />{material}</mesh>
+            <mesh position-y={1.02}><sphereGeometry args={[0.16, 24, 16]} />{material}</mesh>
+          </>
+        )}
+        {role === 'orchestrator' && (
+          <>
+            <mesh position-y={0.55}><coneGeometry args={[0.32, 1.1, 32]} />{material}</mesh>
+            <mesh position-y={1.22}><sphereGeometry args={[0.18, 24, 16]} />{material}</mesh>
+            <Halo y={1.5} color={color} />
+          </>
+        )}
+        {role === 'verifier' && (
+          <>
+            <mesh position-y={0.4}><cylinderGeometry args={[0.24, 0.28, 0.8, 6]} />{material}</mesh>
+            <mesh position-y={0.98}><icosahedronGeometry args={[0.17, 0]} />{material}</mesh>
+          </>
+        )}
         <mesh position-y={0.01} rotation-x={-Math.PI / 2}>
-          <ringGeometry args={[0.26, 0.3, 32]} />
-          <meshBasicMaterial color={lit ? palette.accent : edge} transparent opacity={lit ? 1 : 0.5} />
+          <ringGeometry args={[0.32, 0.37, 32]} />
+          <meshBasicMaterial color={lit ? palette.accent : color} transparent opacity={lit ? 1 : 0.6} />
         </mesh>
       </group>
       {/* Each <Html> stays mounted and only its content changes: mounting one starts a React root. */}
-      <Html position={bubbleSide ? [0.3, 1.2, 0] : [0, 1.3, 0]} zIndexRange={[40, 20]}>
-        {bubble && <span className={`bubble ${bubbleSide ? 'side' : ''} ${bubbleReading ? 'reading' : ''}`} title={bubble}>{short(bubble)}</span>}
+      <Html position={[0, top, 0]} zIndexRange={[40, 20]}>
+        {bubble && <span className={`bubble ${bubbleReading ? 'reading' : ''}`} title={bubble}>{short(bubble)}</span>}
       </Html>
       <Html position={[0, -0.1, 0]} zIndexRange={[20, 0]}>
         {onClick
@@ -277,6 +300,18 @@ function Figure({ target, color, edge, lit, faded, palette, title, onClick, bubb
           : <div className="label3d" title={title}>{children}</div>}
       </Html>
     </group>
+  );
+}
+
+/** The orchestrator's halo: a thin ring turning over its head. */
+function Halo({ y, color }: { y: number; color: string }) {
+  const ref = useRef<Mesh>(null);
+  useFrame((_, dt) => { if (ref.current && !reducedMotion) ref.current.rotation.z += dt * 1.2; });
+  return (
+    <mesh ref={ref} position-y={y} rotation-x={Math.PI / 2 - 0.25}>
+      <torusGeometry args={[0.2, 0.025, 8, 40, Math.PI * 1.6]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
+    </mesh>
   );
 }
 
