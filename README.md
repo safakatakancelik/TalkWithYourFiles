@@ -96,6 +96,7 @@ One harness session does every turn, so its context keeps growing. Run it with f
 
 ## Documentation
 
+- How the parts connect, with diagrams: [docs/how-it-works.md](docs/how-it-works.md)
 - Backend plan and design: [docs/development/revision-2-backend/](docs/development/revision-2-backend/)
 - UI design: [docs/development/revision-2-initialization/design.md](docs/development/revision-2-initialization/design.md)
 - Backend commands and tests: [backend/README.md](backend/README.md)
