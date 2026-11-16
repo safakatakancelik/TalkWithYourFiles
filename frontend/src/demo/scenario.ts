@@ -1,5 +1,5 @@
 import { ORCHESTRATOR } from '../backend/types';
-import type { Agent, AgentEvent, ChatMsg, Citation, ContextMap, FileItem, Note, Session } from '../backend/types';
+import type { Agent, AgentEvent, ChatMsg, Citation, Claim, ContextMap, FileItem, Note, Session, Verdict } from '../backend/types';
 
 // The demo scenario: a made-up company, six dummy files, a pool of five translators and a scripted huddle.
 // It is plain data, so it can later be replayed against a real backend as a test case.
@@ -35,18 +35,48 @@ const note = (id: string, fileId: string, authorId: string, kind: Note['kind'], 
   id, fileId, authorId, kind, text, citations, createdAt, weight: 'normal',
 });
 
-// Notes written before the demo starts, when the files were first read.
+const cite = (n: number, fileId: string, agentId: string, location: string, passage: string, quote: string): Citation => ({
+  n, fileId, agentId, location, passage, quote,
+});
+
+// The paragraphs the quotes come from, as the backend extracts them (10-demo-scenario.md section 2).
+const P_CONTRACT = 'Clause 4.2, Price adjustment. The Price shall be USD 6.40 per kilogram until 31 December 2026. From 1 January 2027 the Price shall increase by eight percent (8%) to USD 6.91 per kilogram.';
+const P_SALES = 'channel=Total Q3 2026, total_kg=5150, avg_price_per_kg=29.00, cogs_per_kg=13.05, green_coffee_per_kg=7.60, gross_margin=55.0%';
+const P_BOARD = 'The board agreed to hold retail prices at current levels until the March 2027 meeting. The gross margin target for the financial year remains 55%.';
+const P_PRICING = 'A price review is required whenever cost of goods moves by more than 5% in either direction. The review must be presented to the board within 30 days.';
+
+// Notes written before the demo starts, when the files were first read. Every summary is cited, numbered from 1 within its note.
 const notes: Note[] = [
   note('n-contract', 'f-contract', 'a-contracts', 'summary',
-    'Supply contract with Andes Green Coffee. Green coffee at $6.40 per kg through December 2026, with an 8% increase from 1 January 2027.'),
+    'Supply contract with Andes Green Coffee. Green coffee at $6.40 per kg through December 2026, with an 8% increase from 1 January 2027.', [
+      cite(1, 'f-contract', 'a-contracts', 'Clause 4.2, Price adjustment', P_CONTRACT, 'The Price shall be USD 6.40 per kilogram until 31 December 2026'),
+      cite(2, 'f-contract', 'a-contracts', 'Clause 4.2, Price adjustment', P_CONTRACT, 'From 1 January 2027 the Price shall increase by eight percent (8%)'),
+    ]),
   note('n-sales', 'f-sales', 'a-finance', 'summary',
-    'Q3 2026 sales by channel. 5,150 kg sold at an average of $29.00 per kg. Cost of goods $13.05 per kg, of which green coffee is $7.60.'),
+    'Q3 2026 sales by channel. 5,150 kg sold at an average of $29.00 per kg. Cost of goods $13.05 per kg, of which green coffee is $7.60.', [
+      cite(1, 'f-sales', 'a-finance', 'Row 4', P_SALES, 'total_kg=5150, avg_price_per_kg=29.00, cogs_per_kg=13.05, green_coffee_per_kg=7.60'),
+    ]),
   note('n-board', 'f-board', 'a-t1', 'summary',
-    'October 2026 board meeting. Retail prices held until March 2027. Gross margin target set at 55%.'),
+    'October 2026 board meeting. Retail prices held until March 2027. Gross margin target set at 55%.', [
+      cite(1, 'f-board', 'a-t1', 'Item 3, Pricing and margin', P_BOARD, 'hold retail prices at current levels until the March 2027 meeting'),
+      cite(2, 'f-board', 'a-t1', 'Item 3, Pricing and margin', P_BOARD, 'The gross margin target for the financial year remains 55%'),
+    ]),
   note('n-pricing', 'f-pricing', 'a-t2', 'summary',
-    'Pricing policy. Prices must be reviewed when cost of goods moves more than 5%. Wholesale discounts are capped at 15%.'),
-  note('n-hr', 'f-hr', 'a-people', 'summary', 'Employee handbook: leave, working hours, conduct and benefits.'),
-  note('n-lease', 'f-lease', 'a-contracts', 'summary', 'Lease for the roastery and office at 14 Quay Street, running to 2029.'),
+    'Pricing policy. Prices must be reviewed when cost of goods moves more than 5%. Wholesale discounts are capped at 15%.', [
+      cite(1, 'f-pricing', 'a-t2', 'Section 2, Review triggers', P_PRICING, 'A price review is required whenever cost of goods moves by more than 5%'),
+      cite(2, 'f-pricing', 'a-t2', 'Section 3, Wholesale discounts', 'Wholesale discounts are capped at 15% of list price.', 'Wholesale discounts are capped at 15%'),
+    ]),
+  note('n-hr', 'f-hr', 'a-people', 'summary', 'Employee handbook: leave, working hours, conduct and benefits.', [
+    cite(1, 'f-hr', 'a-people', 'Section 3, Leave', 'Section 3, Leave. Full-time staff receive 25 days of paid leave per year.',
+      'Full-time staff receive 25 days of paid leave per year'),
+  ]),
+  note('n-lease', 'f-lease', 'a-contracts', 'summary', 'Lease for the roastery and office at 14 Quay Street, running to 2029.', [
+    cite(1, 'f-lease', 'a-contracts', 'Section 1, Premises',
+      'Section 1, Premises. The Landlord lets the roastery and office at 14 Quay Street to the Tenant.', 'roastery and office at 14 Quay Street'),
+    cite(2, 'f-lease', 'a-contracts', 'Section 2, Term',
+      'Section 2, Term. The Term shall commence on 1 July 2024 and shall expire on 30 June 2029 unless terminated earlier under Section 11.',
+      'shall expire on 30 June 2029'),
+  ]),
 ];
 
 const map: ContextMap = {
@@ -75,10 +105,6 @@ const sessions: Session[] = [
   { id: 's-lease', title: 'When does the office lease end?', updatedAt: '2026-11-09T14:20:00Z', messageCount: 2 },
 ];
 
-const cite = (n: number, fileId: string, agentId: string, location: string, passage: string, quote: string): Citation => ({
-  n, fileId, agentId, location, passage, quote,
-});
-
 const messages: Record<string, ChatMsg[]> = {
   's-lease': [
     { id: 'm1', role: 'user', text: 'When does the office lease end?' },
@@ -93,17 +119,14 @@ const messages: Record<string, ChatMsg[]> = {
 
 export const demoWorkspace = { files, agents, notes, sessions, map, messages };
 
-const c1 = cite(1, 'f-contract', 'a-contracts', 'Clause 4.2, Price adjustment',
-  'The Price shall be USD 6.40 per kilogram until 31 December 2026. From 1 January 2027 the Price shall increase by eight percent (8%) to USD 6.91 per kilogram.',
+const c1 = cite(1, 'f-contract', 'a-contracts', 'Clause 4.2, Price adjustment', P_CONTRACT,
   'From 1 January 2027 the Price shall increase by eight percent (8%)');
-const c2 = cite(2, 'f-sales', 'a-finance', 'Summary row, Q3 2026',
-  'total_kg=5150, avg_price_per_kg=29.00, cogs_per_kg=13.05, green_coffee_per_kg=7.60, gross_margin=55.0%',
+const c2 = cite(2, 'f-sales', 'a-finance', 'Row 4', P_SALES,
   'avg_price_per_kg=29.00, cogs_per_kg=13.05, green_coffee_per_kg=7.60');
-const c3 = cite(3, 'f-board', 'a-t1', 'Item 3, Pricing and margin',
-  'The board agreed to hold retail prices at current levels until the March 2027 meeting. The gross margin target for the financial year remains 55%.',
+// The whole Item 3 paragraph, so that citation 3 supports both halves of claim k3.
+const c3 = cite(3, 'f-board', 'a-t1', 'Item 3, Pricing and margin', P_BOARD,
   'hold retail prices at current levels until the March 2027 meeting');
-const c4 = cite(4, 'f-pricing', 'a-t2', 'Section 2, Review triggers',
-  'A price review is required whenever cost of goods moves by more than 5% in either direction. The review must be presented to the board within 30 days.',
+const c4 = cite(4, 'f-pricing', 'a-t2', 'Section 2, Review triggers', P_PRICING,
   'A price review is required whenever cost of goods moves by more than 5%');
 
 export interface ScriptStep {
@@ -120,7 +143,24 @@ const finding = (delay: number, id: string, c: Citation, text: string): ScriptSt
   step(500, { type: 'note', note: note(id, c.fileId, c.agentId, 'finding', text, [c], '2026-11-15T10:00:00Z') }),
 ];
 
+// The claims the verifier checks (10-demo-scenario.md section 4). `citations` are the `n` of c1 to c4.
+const claim = (id: string, text: string, citations: number[], derivedFrom?: string[], calculation?: string): Claim => ({
+  id, text, kind: derivedFrom ? 'derived' : 'quoted', citations, ...(derivedFrom ? { derivedFrom } : {}), ...(calculation ? { calculation } : {}),
+});
+const k1 = claim('k1', 'Andes Green Coffee raises its price by 8% from 1 January 2027.', [1]);
+const k2 = claim('k2', 'In Q3 2026 the average price was $29.00 per kg, cost of goods was $13.05 per kg, of which green coffee was $7.60, and gross margin was 55.0%.', [2]);
+const k3 = claim('k3', 'The board holds retail prices until the March 2027 meeting and keeps the gross margin target at 55%.', [3]);
+const k4 = claim('k4', 'The pricing policy requires a price review now, because cost of goods moves by more than 5%.', [4]);
+const k5 = claim('k5', 'With green coffee up 8%, cost of goods becomes $13.66 per kg and gross margin at $29.00 falls to 52.9%.', [1, 2], ['k1', 'k2'], '1 - (13.05 + 7.60 * 0.08) / 29.00');
+const k6 = claim('k6', 'Keeping a 55% margin needs a price of about $30.35 per kg, a rise of about 4.7%.', [1, 2, 3], ['k1', 'k2', 'k3'], '(13.05 + 7.60 * 0.08) / (1 - 0.55)');
+const k4b = claim('k4b', 'The pricing policy requires a price review when cost of goods moves by more than 5%.', [4]);
+const k7 = claim('k7', 'Cost of goods rises by about 4.7%, which is below the 5% review trigger.', [1, 2, 4], ['k1', 'k2', 'k4b'], '7.60 * 0.08 / 13.05');
+const k8 = claim('k8', 'The price hold and the 55% margin target cannot both be kept.', [1, 2, 3], ['k3', 'k5']);
+const supported = (c: Claim, reason = 'The cited passages state it.'): Verdict => ({ claimId: c.id, verdict: 'supported', reason });
+const K4_REASON = 'The passage gives the 5% rule. Nothing cited shows that cost of goods moves by more than 5%.';
+
 export const demoScript: ScriptStep[] = [
+  step(0, { type: 'started', questionId: 'q-demo' }),
   step(900, { type: 'status', text: 'The chat agent passed your question to the orchestrator' }),
   step(1200, {
     type: 'broadcast', to: agents.map((a) => a.id),
@@ -142,13 +182,30 @@ export const demoScript: ScriptStep[] = [
   step(1300, { type: 'join', agentId: 'a-t2', how: 'called' }),
   step(600, { type: 'assign', agentId: 'a-t2', fileId: 'f-pricing' }),
   step(900, { type: 'reading', agentId: 'a-t2' }),
-  ...finding(1500, 'n-find-4', c4, 'Section 2: a review is required when cost of goods moves more than 5%. An 8% rise on green coffee qualifies.'),
-  step(2200, { type: 'say', agentId: 'a-finance',
+  ...finding(1500, 'n-find-4', c4, 'Section 2: a review is required when cost of goods moves more than 5%.'),
+  step(1800, { type: 'say', agentId: ORCHESTRATOR, text: 'Finance translator, what does the increase do to our margin?' }),
+  step(2200, { type: 'say', agentId: 'a-finance', citations: [c1, c2],
     text: 'Using the Contracts translator\'s note: with green coffee up 8%, cost of goods becomes $13.66 per kg. At $29.00 the margin falls to 52.9%.' }),
-  step(2400, { type: 'say', agentId: ORCHESTRATOR,
-    text: 'Settled: the margin target is missed unless prices rise about 4.7%. That conflicts with the price hold.' }),
-  step(2200, { type: 'leave', agentIds: ['a-contracts', 'a-finance', 'a-t1', 'a-t2'] }),
-  step(600, { type: 'status', text: 'The orchestrator returned the findings. Writing the answer' }),
+  step(2000, { type: 'say', agentId: ORCHESTRATOR, text: 'I think we have an answer. Verifier, please check the claims.' }),
+  step(1500, { type: 'verify', round: 1, claims: [k1, k2, k3, k4, k5, k6], citations: [c1, c2, c3, c4] }),
+  step(2600, { type: 'verdict', round: 1, passed: false, verdicts: [
+    supported(k1), supported(k2), supported(k3), { claimId: 'k4', verdict: 'partly_supported', reason: K4_REASON },
+    supported(k5), supported(k6),
+  ] }),
+  step(1200, { type: 'rehuddle', round: 2, reason: K4_REASON, claimIds: ['k4'] }),
+  step(1600, { type: 'say', agentId: ORCHESTRATOR,
+    text: 'The verifier found no evidence that cost of goods moves more than 5%. Finance translator, how much does it move?' }),
+  step(1800, { type: 'reading', agentId: 'a-finance' }),
+  step(1500, { type: 'say', agentId: 'a-finance', citations: [c1, c2],
+    text: 'Cost of goods moves from $13.05 to $13.66 per kg, which is 4.7%. That is under the 5% trigger.' }),
+  step(500, { type: 'note', note: note('n-find-5', 'f-sales', 'a-finance', 'finding',
+    'Cost of goods moves about 4.7%, under the 5% review trigger.', [c2], '2026-11-15T10:05:00Z') }),
+  step(2000, { type: 'say', agentId: ORCHESTRATOR,
+    text: 'Settled: the margin target is missed unless prices rise about 4.7%, and the policy does not force a review.' }),
+  step(1500, { type: 'verify', round: 2, claims: [k1, k2, k3, k5, k6, k4b, k7, k8], citations: [c1, c2, c3, c4] }),
+  step(2600, { type: 'verdict', round: 2, passed: true, verdicts: [k1, k2, k3, k5, k6, k4b, k7, k8].map((c) => supported(c)) }),
+  step(1200, { type: 'leave', agentIds: ['a-contracts', 'a-finance', 'a-t1', 'a-t2'] }),
+  step(600, { type: 'status', text: 'Every claim was verified. Writing the answer' }),
   step(400, {
     type: 'context',
     nodes: [{ id: 'e-increase', label: 'January 2027 price increase', kind: 'entity' }],
@@ -162,9 +219,12 @@ export const demoScript: ScriptStep[] = [
     type: 'answer', citations: [c1, c2, c3, c4],
     text:
       'Not without changing something. From 1 January 2027, Andes Green Coffee raises its price by 8% [1]. ' +
-      'At Q3 prices and costs, that takes gross margin from 55.0% to about 52.9% [2], which is below the board\'s 55% target [3].\n\n' +
-      'The board also decided to hold retail prices until March 2027 [3], but the pricing policy requires a price review ' +
-      'when cost of goods moves more than 5% [4]. To stay at 55% you would need a price rise of about 4.7%, to roughly $30.36 per kg. ' +
-      'The price hold and the margin target cannot both be kept, so this needs a board decision.',
+      'At Q3 prices and costs, that takes gross margin from 55.0% to about 52.9% [1][2]. ' +
+      'That is below the board\'s 55% target [3].\n\n' +
+      'The board also decided to hold retail prices until March 2027 [3]. ' +
+      'The pricing policy requires a review only when cost of goods moves more than 5% [4]. ' +
+      'This change is about 4.7%, so the policy does not force one [1][2][4]. ' +
+      'To stay at 55% you would need a price of about $30.35 per kg, a rise of about 4.7% [1][2][3]. ' +
+      'The price hold and the margin target cannot both be kept [1][2][3]. This needs a board decision.',
   }),
 ];

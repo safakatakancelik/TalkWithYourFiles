@@ -126,7 +126,7 @@ export function Stage({ agents, files, notes, huddle, litAgent, litFile, nameOf,
         </div>
 
         <div className={`agent verifier ${huddle.verifier ? 'in' : ''}`} title="Verifier"
-          style={{ left: `calc(50% + ${huddle.verifier ? 58 : 112}px)`, top: `calc(${CENTER_Y}% + ${huddle.verifier ? 46 : 138}px)` }}>
+          style={{ left: `calc(50% + ${huddle.verifier ? 44 : 112}px)`, top: `calc(${CENTER_Y}% + ${huddle.verifier ? 18 : 138}px)` }}>
           {huddle.verifier && huddle.verifier.state !== 'checking' && (
             <span className={`mark ${huddle.verifier.state}`} aria-label={huddle.verifier.state}>{huddle.verifier.state === 'passed' ? '✓' : '✗'}</span>
           )}

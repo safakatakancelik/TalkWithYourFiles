@@ -36,13 +36,13 @@ test('the demo question triggers every kind of agent work and a fully cited answ
 
   // Each translator stores what it found as a note on the file it was given, with a citation into that file.
   const written = of('note').map((e) => e.note);
-  expect(written).toHaveLength(4);
+  expect(written).toHaveLength(5);
   for (const n of written) {
     expect(assigns.some((a) => a.agentId === n.authorId && a.fileId === n.fileId)).toBe(true);
     expect(n.citations.length).toBeGreaterThan(0);
     for (const c of n.citations) expect(c.fileId).toBe(n.fileId);
   }
-  expect((await backend.listNotes(ws)).length).toBe(notesBefore.length + 4);
+  expect((await backend.listNotes(ws)).length).toBe(notesBefore.length + 5);
 
   // A note can be turned off without touching the file or the agent.
   await backend.setNoteWeight(ws, [written[0].id], 'off');
@@ -67,4 +67,34 @@ test('the demo question triggers every kind of agent work and a fully cited answ
   // The context map grows.
   const after = await backend.getContextMap(ws);
   expect(after.nodes.length).toBeGreaterThan(before.nodes.length);
+
+  // Verification (10-demo-scenario.md section 6).
+  expect(events[0].type).toBe('started');
+  for (const n of notesBefore.filter((x) => x.kind === 'summary' && x.authorId !== 'user')) {
+    expect(n.citations.length).toBeGreaterThan(0);
+    for (const c of n.citations) expect(c.passage).toContain(c.quote);
+  }
+  for (const say of of('say').filter((x) => x.agentId !== 'orchestrator')) expect(say.citations?.length ?? 0).toBeGreaterThan(0);
+  expect(of('say').some((x) => x.agentId === 'verifier')).toBe(false);
+  const verifies = of('verify');
+  const verdicts = of('verdict');
+  expect(verifies).toHaveLength(2);
+  expect(verdicts).toHaveLength(2);
+  expect(verdicts[0].passed).toBe(false);
+  expect(verdicts[0].verdicts.filter((v) => v.verdict !== 'supported')).toHaveLength(1);
+  const index = (e: AgentEvent) => events.indexOf(e);
+  for (const v of verifies) {
+    const next = verdicts.find((d) => index(d) > index(v));
+    expect(next?.verdicts.map((x) => x.claimId).sort()).toEqual(v.claims.map((c) => c.id).sort());
+  }
+  const rehuddles = of('rehuddle');
+  expect(rehuddles).toHaveLength(1);
+  expect(rehuddles[0].round).toBe(2);
+  expect(rehuddles[0].claimIds).toEqual(verdicts[0].verdicts.filter((v) => v.verdict !== 'supported').map((v) => v.claimId));
+  expect(index(rehuddles[0])).toBe(index(verdicts[0]) + 1);
+  const between = events.slice(index(rehuddles[0]), index(verifies[1]));
+  expect(between.some((e) => e.type === 'say' && (e.citations?.length ?? 0) > 0)).toBe(true);
+  expect(verdicts[1].passed).toBe(true);
+  expect(index(of('leave')[0])).toBeGreaterThan(index(verdicts[1]));
+  expect(answer.unverified ?? []).toHaveLength(0);
 });
