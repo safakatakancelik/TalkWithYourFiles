@@ -72,7 +72,8 @@ jobs:
         working-directory: frontend
       - name: Start the demo server
         run: |
-          backend/scripts/run_demo_server.sh > demo-server.log 2>&1 &
+          # Its own process group, whose id it writes itself: setsid may fork, and then $! is not that id.
+          setsid bash -c 'echo $$ > demo-server.pid; exec backend/scripts/run_demo_server.sh' > demo-server.log 2>&1 &
           curl -s --retry 60 --retry-delay 1 --retry-connrefused http://127.0.0.1:8321/api/v1/health
       - run: npm test
         working-directory: frontend
@@ -80,3 +81,7 @@ jobs:
           TWYF_TEST_BACKEND_URL: http://127.0.0.1:8321
       - if: failure()
         run: cat demo-server.log
+      # The server runs under `uv run`, which holds uv's cache lock: left running, setup-uv's cache prune waits on it and fails the job.
+      - name: Stop the demo server
+        if: always()
+        run: kill -- -"$(cat demo-server.pid)" 2>/dev/null || true

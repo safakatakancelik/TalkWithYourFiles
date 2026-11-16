@@ -62,7 +62,8 @@ fi
 # --inexact keeps packages installed by hand, such as the rich extra when this run uses --basic.
 uv sync --directory backend --inexact "${extra[@]}"
 if [ ${#extra[@]} -eq 0 ]; then echo "Search: keyword only (--basic)."; else echo "Search: hybrid, keyword and vectors."; fi
-[ -z "$ui" ] || [ -d frontend/node_modules ] || (cd frontend && npm install)
+# npm writes node_modules/.package-lock.json on every install: older than package-lock.json means new packages to install.
+[ -z "$ui" ] || [ frontend/node_modules/.package-lock.json -nt frontend/package-lock.json ] || (cd frontend && npm install)
 
 # Stops the backend and the UI with everything they started, however this script ends.
 stop_tree() { local child; for child in $(pgrep -P "$1"); do stop_tree "$child"; done; kill "$1" 2>/dev/null || true; }
