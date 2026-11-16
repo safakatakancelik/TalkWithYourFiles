@@ -47,17 +47,17 @@ const at = (r: number, deg: number): Vec => {
 const ORCHESTRATOR_WAITS = at(4.2, 135);
 const VERIFIER_WAITS = at(4.2, 45);
 
-const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+export const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 /** Fraction of the way to move towards a target this frame. Reduced motion snaps. */
-const ease = (dt: number, speed = 4) => (reducedMotion ? 1 : 1 - Math.exp(-speed * dt));
+export const ease = (dt: number, speed = 4) => (reducedMotion ? 1 : 1 - Math.exp(-speed * dt));
 
 /** The theme's colours, read from the CSS variables and re-read when the theme changes. */
-function usePalette() {
+export function usePalette() {
   const read = () => {
     const s = getComputedStyle(document.documentElement);
     const v = (n: string) => s.getPropertyValue(n).trim();
     return {
-      accent: v('--accent'), text: v('--text'), surface: v('--surface'), line: v('--line'), muted: v('--muted'), soft: v('--soft'),
+      accent: v('--accent'), text: v('--text'), bg: v('--bg'), stage: v('--stage'), surface: v('--surface'), line: v('--line'), muted: v('--muted'), soft: v('--soft'),
       dark: document.documentElement.dataset.theme === 'dark',
     };
   };
@@ -69,7 +69,7 @@ function usePalette() {
   }, []);
   return palette;
 }
-type Palette = ReturnType<typeof usePalette>;
+export type Palette = ReturnType<typeof usePalette>;
 
 /** Where a file rests in the bucket: sunflower rings, stacked in layers. */
 function fileSpot(i: number, n: number): { pos: Vec; yaw: number } {
@@ -81,7 +81,7 @@ function fileSpot(i: number, n: number): { pos: Vec; yaw: number } {
   return { pos: [Math.cos(a) * r, 0.3 + layer * 0.16, Math.sin(a) * r], yaw: Math.sin(a * 3) * 0.5 };
 }
 
-interface Props {
+export interface FloorProps {
   agents: Agent[];
   files: FileItem[];
   huddle: Huddle;
@@ -93,7 +93,7 @@ interface Props {
   onMore: () => void;
 }
 
-export default function Floor3D(props: Props) {
+export default function Floor3D(props: FloorProps) {
   const palette = usePalette();
   return (
     <div className="floor floor3d">
@@ -105,7 +105,8 @@ export default function Floor3D(props: Props) {
   );
 }
 
-function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, palette }: Props & { palette: Palette }) {
+/** The huddle floor. On its own it brings its lights and orbit camera; the immersive room brings its own. */
+export function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, palette, standalone = true }: FloorProps & { palette: Palette; standalone?: boolean }) {
   const { active, members, working, busy } = huddle;
   // Working: its turn is running. Waiting: in the huddle while others work. Idle: no part in the question now.
   const mode = (id: string, inHuddle: boolean): Mode => (busy[id] ? 'working' : active && inHuddle ? 'waiting' : 'idle');
@@ -133,9 +134,13 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
 
   return (
     <>
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[4, 8, 5]} intensity={1.4} />
-      <OrbitControls enablePan={false} target={[0, 0.2, 0.8]} minDistance={5} maxDistance={16} minPolarAngle={0.35} maxPolarAngle={1.25} enableDamping />
+      {standalone && (
+        <>
+          <ambientLight intensity={0.9} />
+          <directionalLight position={[4, 8, 5]} intensity={1.4} />
+          <OrbitControls enablePan={false} target={[0, 0.2, 0.8]} minDistance={5} maxDistance={16} minPolarAngle={0.35} maxPolarAngle={1.25} enableDamping />
+        </>
+      )}
 
       <mesh rotation-x={-Math.PI / 2} position-y={-0.01}>
         <circleGeometry args={[5, 64]} />
@@ -438,7 +443,7 @@ function Flight({ from, to, color }: { from: Vec; to: Vec; color: string }) {
 }
 
 /** The story line over the floor: what is happening now, and for how long, so a long turn still visibly moves on. */
-function NowLine({ now }: { now: Huddle['now'] }) {
+export function NowLine({ now }: { now: Huddle['now'] }) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (!now) return;

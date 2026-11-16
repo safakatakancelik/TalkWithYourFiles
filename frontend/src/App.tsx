@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { backend } from './backend';
 import { ORCHESTRATOR, VERIFIER } from './backend/types';
 import type { Agent, AgentEvent, ChatMsg, Citation, ContextMap, FileItem, Note, Session, Weight, Workspace } from './backend/types';
@@ -6,12 +6,15 @@ import { Chat } from './Chat';
 import type { ChatMode } from './Chat';
 import { AgentCard, AgentsPanel, CitationPanel, ContextMapPanel, Explorer, FileCard, Sessions } from './Panels';
 import type { NoteActions } from './Panels';
-import { Stage } from './Stage';
+import { Stage, hasWebGL } from './Stage';
 import type { Huddle } from './Stage';
 import { tell } from './story';
 // Demo-only imports: the "Run demo" button and its controls drive the mock's clock.
 import { clock, resetDemo } from './backend/mock';
 import { DEMO_QUESTION, DEMO_WORKSPACE } from './demo/scenario';
+
+/** The immersive view loads on its own, like the 3D floor. */
+const Immersive = lazy(() => import('./Immersive'));
 
 const emptyHuddle: Huddle = { active: false, members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [], verifier: null, busy: {}, now: null, flights: [] };
 /** The backend's default TWYF_MAX_VERIFY_ROUNDS. The events do not carry it. */
@@ -33,6 +36,7 @@ export default function App() {
   const [msgs, setMsgs] = useState<Record<string, ChatMsg[]>>({});
   const [huddle, setHuddle] = useState<Huddle>(emptyHuddle);
   const [mode, setMode] = useState<ChatMode>('half');
+  const [immersive, setImmersive] = useState(false);
   const [panel, setPanel] = useState<null | 'E' | 'A' | 'S' | 'C'>(null);
   const [cite, setCite] = useState<Citation | null>(null);
   // The file or the agent whose card is open. They are separate things with separate cards.
@@ -309,6 +313,39 @@ export default function App() {
   const cardAgent = card?.kind === 'agent' ? agents.find((a) => a.id === card.id) : undefined;
   const cardFile = card?.kind === 'file' ? files.find((f) => f.id === card.id) : undefined;
 
+  const chat = (
+    <Chat mode={immersive ? 'full' : mode} messages={sid ? msgs[sid] ?? [] : []} busy={running} hasFiles={files.length > 0}
+      onSend={(t) => send(t)} onCite={openCite} />
+  );
+  const citation = cite && <CitationPanel citation={cite} file={files.find((f) => f.id === cite.fileId)} foundBy={nameOf(cite.agentId)} onClose={() => setCite(null)} />;
+  const demo = (
+    <>
+      {running && (
+        <span className="demo-controls">
+          <button onClick={() => setPaused(!paused)}>{paused ? 'Play' : 'Pause'}</button>
+          <button onClick={() => clock.step()}>Step</button>
+          <button onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])} title="Speed">{speed}x</button>
+        </span>
+      )}
+      <button className="primary" onClick={runDemo}>{ws === DEMO_WORKSPACE.id && (running || sid) ? 'Restart demo' : 'Run demo'}</button>
+    </>
+  );
+  const themeButton = <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button>;
+
+  // The immersive view replaces the whole page; the state, the chat and the question stream stay the same.
+  if (immersive) {
+    return (
+      <Suspense fallback={<div className="immersive" />}>
+        <Immersive agents={agents} files={files} huddle={huddle} nameOf={nameOf}
+          litAgent={cite?.agentId ?? null} litFile={cite?.fileId ?? null}
+          onAgent={() => {}} onFile={() => {}} onMore={() => {}}
+          messages={sid ? msgs[sid] ?? [] : []} running={running}
+          chat={chat} citation={citation} onCite={openCite} actions={<>{demo}{themeButton}</>}
+          onExit={() => setImmersive(false)} />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -322,15 +359,9 @@ export default function App() {
           <button onClick={deleteWorkspace} title="Delete this workspace">Delete</button>
         </span>
         <span className="grow" />
-        {running && (
-          <span className="demo-controls">
-            <button onClick={() => setPaused(!paused)}>{paused ? 'Play' : 'Pause'}</button>
-            <button onClick={() => clock.step()}>Step</button>
-            <button onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])} title="Speed">{speed}x</button>
-          </span>
-        )}
-        <button className="primary" onClick={runDemo}>{ws === DEMO_WORKSPACE.id && (running || sid) ? 'Restart demo' : 'Run demo'}</button>
-        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button>
+        {demo}
+        {hasWebGL && <button onClick={() => { setCard(null); setPanel(null); setImmersive(true); }} title="Walk through the stage in first person">Immersive</button>}
+        {themeButton}
       </header>
 
       <div className="body">
@@ -353,14 +384,13 @@ export default function App() {
               <button onClick={() => resize(1)} disabled={mode === 'full'} title="Make the chat bigger" aria-label="Make the chat bigger">↑</button>
             </span>
           </div>
-          <Chat mode={mode} messages={sid ? msgs[sid] ?? [] : []} busy={running} hasFiles={files.length > 0}
-            onSend={(t) => send(t)} onCite={openCite} />
+          {chat}
 
           {panel === 'E' && <Explorer files={files} notes={notes} onUpload={upload} onFile={(id) => setCard({ kind: 'file', id })} onClose={() => setPanel(null)} />}
           {panel === 'A' && <AgentsPanel agents={agents} notes={notes} onAgent={(id) => setCard({ kind: 'agent', id })} onCreate={createAgent} onClose={() => setPanel(null)} />}
           {panel === 'S' && <Sessions sessions={sessions} current={sid} onOpen={setSid} onNew={newSession} onRename={renameSession} onDelete={deleteSession} onClose={() => setPanel(null)} />}
           {panel === 'C' && <ContextMapPanel map={map} onClose={() => setPanel(null)} />}
-          {cite && <CitationPanel citation={cite} file={files.find((f) => f.id === cite.fileId)} foundBy={nameOf(cite.agentId)} onClose={() => setCite(null)} />}
+          {citation}
           {cardFile && <FileCard key={cardFile.id} file={cardFile} notes={notes} actions={noteActions} onAddNote={(t) => addNote(cardFile.id, t)}
             onNewVersion={(f) => newVersion(cardFile.id, f)} onDelete={() => deleteFile(cardFile)} onClose={() => setCard(null)} />}
           {cardAgent && <AgentCard key={cardAgent.id} ws={ws} agent={cardAgent} notes={notes} actions={noteActions}

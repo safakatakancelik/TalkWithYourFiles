@@ -252,3 +252,54 @@ button.label3d:hover, .label3d.lit { background: var(--soft); }
 @media (prefers-reduced-motion: reduce) {
   .now-text, .bubble { animation: none; transition: none; }
 }
+
+/* The immersive view: the stage as a room, walked through in first person. */
+.immersive { position: fixed; inset: 0; z-index: 50; isolation: isolate; background: var(--bg); overflow: hidden; }
+.immersive canvas { touch-action: none; }
+.immersive .now3d { z-index: 60; }
+kbd {
+  display: inline-block; min-width: 20px; margin-right: 3px; padding: 2px 6px; text-align: center;
+  font: 600 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+}
+.crosshair {
+  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; z-index: 60; pointer-events: none;
+  border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--surface); opacity: 0.75;
+}
+.use-hint {
+  position: absolute; left: 50%; top: calc(50% + 26px); transform: translateX(-50%); z-index: 60; pointer-events: none;
+  display: flex; align-items: center; gap: 6px; padding: 5px 12px; font-size: 13px;
+  background: var(--surface); border: 1px solid var(--accent); border-radius: 999px; box-shadow: var(--shadow); animation: fade 0.2s ease-out;
+}
+.pause {
+  position: absolute; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, var(--bg) 40%, transparent); backdrop-filter: blur(3px);
+}
+.pause-card { width: min(480px, 100%); padding: 20px 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+.pause-card h2 { margin: 0 0 6px; font-size: 18px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; margin: 14px 0 18px; font-size: 13px; }
+.pause-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pause-actions .demo-controls { display: contents; }
+.screen-view { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.45); animation: fade 0.2s ease-out; }
+.screen-frame {
+  /* Sized to the window, not to its content: the chat and the log scroll inside it and the input stays in view. */
+  width: min(1040px, 100%); height: min(760px, calc(100vh - 48px)); height: min(760px, calc(100dvh - 48px)); display: flex; flex-direction: column;
+  padding: 8px 10px 14px; background: #14171b; border-radius: 16px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+.screen-frame header { display: flex; align-items: center; gap: 10px; padding: 2px 4px 8px; color: #d6d9de; }
+.screen-frame .hint-text { font-size: 12px; color: #8b9098; }
+.screen-frame header button { color: var(--text); }
+.screen-body .entries { font-size: 14px; padding: 14px 18px; min-height: 0; }
+.screen-body .entries p { margin-bottom: 10px; }
+.screen-body { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; border-radius: 8px; background: var(--surface); }
+/* What the 3D monitor and the log board show. Html with `transform` draws them in the room; they are not interactive. */
+.screen3d, .board3d { display: flex; flex-direction: column; overflow: hidden; background: var(--surface); color: var(--text); pointer-events: none; user-select: none; }
+.screen3d { width: 512px; height: 304px; padding: 10px 14px; gap: 6px; font-size: 12px; }
+.screen3d header, .board3d header { display: flex; justify-content: space-between; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.screen3d-msgs { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; overflow: hidden; }
+.screen3d .msg { max-width: 88%; padding: 6px 10px; line-height: 1.35; }
+.board3d { width: 900px; height: 540px; padding: 18px 24px; gap: 4px; font-size: 19px; }
+.board3d p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .use-hint, .screen-view { animation: none; }
+}

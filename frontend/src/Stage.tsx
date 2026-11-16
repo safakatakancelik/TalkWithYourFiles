@@ -33,7 +33,7 @@ export interface Huddle {
 const Floor3D = lazy(() => import('./Floor3D'));
 
 /** Whether this browser can draw the 3D floor. Without WebGL the flat floor is shown. */
-const hasWebGL = (() => {
+export const hasWebGL = (() => {
   try {
     return !!document.createElement('canvas').getContext('webgl2');
   } catch {
@@ -55,10 +55,27 @@ interface Props {
   onCite: (c: Citation) => void;
 }
 
+/** Every entry of the huddle log, scrolled to the newest. Shown beside the stage and on the immersive view's log board. */
+export function LogEntries({ log, nameOf, onCite }: { log: LogEntry[]; nameOf: (id: string) => string; onCite: (c: Citation) => void }) {
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [log.length]);
+  return (
+    <div className="entries">
+      {log.length === 0 && <p className="muted">The agents' discussion appears here.</p>}
+      {log.map((e, i) =>
+        e.who === 'system' ? <p key={i} className="muted">{e.text}</p> : (
+          <p key={i}>
+            <b>{nameOf(e.who)}</b> {e.text}{' '}
+            {e.citations?.map((c) => <button key={c.n} className="cite" onClick={() => onCite(c)}>{c.n}</button>)}
+          </p>
+        ))}
+      <div ref={end} />
+    </div>
+  );
+}
+
 export function Stage({ agents, files, notes, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, onCite }: Props) {
   const [logOpen, setLogOpen] = useState(true);
-  const logEnd = useRef<HTMLDivElement>(null);
-  useEffect(() => { logEnd.current?.scrollIntoView({ block: 'nearest' }); }, [huddle.log.length]);
 
   const { working } = huddle;
 
@@ -101,17 +118,7 @@ export function Stage({ agents, files, notes, huddle, litAgent, litFile, nameOf,
             <strong>Huddle log</strong>
             <button onClick={() => setLogOpen(false)} aria-label="Hide the huddle log">Hide</button>
           </header>
-          <div className="entries">
-            {huddle.log.length === 0 && <p className="muted">The agents' discussion appears here.</p>}
-            {huddle.log.map((e, i) =>
-              e.who === 'system' ? <p key={i} className="muted">{e.text}</p> : (
-                <p key={i}>
-                  <b>{nameOf(e.who)}</b> {e.text}{' '}
-                  {e.citations?.map((c) => <button key={c.n} className="cite" onClick={() => onCite(c)}>{c.n}</button>)}
-                </p>
-              ))}
-            <div ref={logEnd} />
-          </div>
+          <LogEntries log={huddle.log} nameOf={nameOf} onCite={onCite} />
         </aside>
       ) : (
         <button className="log-toggle" onClick={() => setLogOpen(true)}>Huddle log ({huddle.log.length})</button>
