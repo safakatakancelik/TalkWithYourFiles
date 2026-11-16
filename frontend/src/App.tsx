@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { backend } from './backend';
-import { ORCHESTRATOR } from './backend/types';
+import { ORCHESTRATOR, VERIFIER } from './backend/types';
 import type { Agent, AgentEvent, ChatMsg, Citation, ContextMap, FileItem, Note, Session, Weight, Workspace } from './backend/types';
 import { Chat } from './Chat';
 import type { ChatMode } from './Chat';
@@ -12,7 +12,9 @@ import type { Huddle } from './Stage';
 import { clock, resetDemo } from './backend/mock';
 import { DEMO_QUESTION, DEMO_WORKSPACE } from './demo/scenario';
 
-const emptyHuddle: Huddle = { members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [] };
+const emptyHuddle: Huddle = { members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [], verifier: null };
+/** The backend's default TWYF_MAX_VERIFY_ROUNDS. The events do not carry it. */
+const MAX_ROUNDS = 3;
 const MODES: ChatMode[] = ['bar', 'half', 'full'];
 const SPEEDS = [0.5, 1, 2, 4];
 let counter = 0;
@@ -20,7 +22,7 @@ const uid = () => `m-${counter++}`;
 
 export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [ws, setWs] = useState('mine');
+  const [ws, setWs] = useState(''); // the first workspace the backend lists
   const [files, setFiles] = useState<FileItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -42,7 +44,8 @@ export default function App() {
   const names = useRef<Record<string, string>>({});
   const fileNames = useRef<Record<string, string>>({});
 
-  const nameOf = (id: string) => (id === ORCHESTRATOR ? 'Orchestrator' : id === 'user' ? 'You' : names.current[id] ?? id);
+  const nameOf = (id: string) =>
+    id === ORCHESTRATOR ? 'Orchestrator' : id === VERIFIER ? 'Verifier' : id === 'user' ? 'You' : names.current[id] ?? id;
   const fileName = (id: string) => files.find((f) => f.id === id)?.name ?? fileNames.current[id] ?? id;
 
   const refresh = async (id: string) => {
@@ -65,8 +68,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    backend.listWorkspaces().then(setWorkspaces);
-    loadWs('mine');
+    backend.listWorkspaces().then((list) => {
+      setWorkspaces(list);
+      if (list[0]) loadWs(list[0].id);
+    });
   }, []);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
@@ -80,6 +85,8 @@ export default function App() {
   const apply = (ev: AgentEvent, patch: (u: Partial<ChatMsg>) => void) => {
     const log = (h: Huddle, who: string, text: string, citations?: Citation[]) => [...h.log, { who, text, citations }];
     switch (ev.type) {
+      case 'started':
+        break;
       case 'status':
         patch({ status: ev.text });
         break;
@@ -111,14 +118,41 @@ export default function App() {
         patch({ status: 'The huddle is discussing your question' });
         setHuddle((h) => ({ ...h, reading: null, bubble: { agentId: ev.agentId, text: ev.text }, log: log(h, ev.agentId, ev.text, ev.citations) }));
         break;
+      case 'verify': {
+        const text = `The verifier is checking ${ev.claims.length} claim${ev.claims.length === 1 ? '' : 's'}`;
+        patch({ status: text });
+        setHuddle((h) => ({ ...h, verifier: { state: 'checking' }, bubble: null, reading: null, log: log(h, 'system', text) }));
+        break;
+      }
+      case 'verdict': {
+        const failed = ev.verdicts.filter((v) => v.verdict !== 'supported');
+        setHuddle((h) => ({
+          ...h, verifier: { state: ev.passed ? 'passed' : 'failed' },
+          log: ev.passed ? log(h, 'system', 'Every claim was verified')
+            : failed.reduce((l, v) => [...l, { who: VERIFIER, text: v.reason }], h.log),
+        }));
+        break;
+      }
+      case 'rehuddle':
+        patch({ status: `Back to the huddle: round ${ev.round} of ${MAX_ROUNDS}` });
+        setHuddle((h) => ({ ...h, log: log(h, 'system', `Round ${ev.round} of ${MAX_ROUNDS}`) }));
+        break;
       case 'leave':
-        setHuddle((h) => ({ ...h, members: h.members.filter((m) => !ev.agentIds.includes(m)), working: {}, bubble: null, reading: null, log: log(h, 'system', 'The huddle ended') }));
+        setHuddle((h) => ({ ...h, members: h.members.filter((m) => !ev.agentIds.includes(m)), working: {}, bubble: null, reading: null, verifier: null, log: log(h, 'system', 'The huddle ended') }));
         break;
       case 'context':
         setMap((m) => ({ nodes: [...m.nodes, ...ev.nodes], links: [...m.links, ...ev.links] }));
         break;
       case 'answer':
-        patch({ text: ev.text, citations: ev.citations, placeholder: ev.placeholder, pending: false, status: undefined });
+        patch({ text: ev.text, citations: ev.citations, placeholder: ev.placeholder, unverified: ev.unverified, pending: false, status: undefined });
+        break;
+      case 'error':
+        patch({ error: ev.message, pending: false, status: undefined });
+        setHuddle((h) => ({ ...h, members: [], working: {}, bubble: null, reading: null, verifier: null }));
+        break;
+      case 'cancelled':
+        patch({ text: 'The question was cancelled.', pending: false, status: undefined });
+        setHuddle((h) => ({ ...h, members: [], working: {}, bubble: null, reading: null, verifier: null }));
         break;
     }
   };
@@ -160,7 +194,7 @@ export default function App() {
   };
 
   const upload = async (list: FileList) => {
-    for (const f of Array.from(list)) await backend.uploadFile(ws, { name: f.name, size: f.size });
+    for (const f of Array.from(list)) await backend.uploadFile(ws, { name: f.name, size: f.size, data: f });
     await refresh(ws);
   };
 
@@ -187,6 +221,33 @@ export default function App() {
   const openCite = (c: Citation) => { setCite(c); setCard(null); };
   const noteActions: NoteActions = { nameOf, fileName, onWeight: setWeight, onCite: openCite };
 
+  const newWorkspace = async () => {
+    const name = prompt('Name of the new workspace');
+    if (!name?.trim()) return;
+    const created = await backend.createWorkspace(name.trim());
+    setWorkspaces(await backend.listWorkspaces());
+    loadWs(created.id);
+  };
+  const renameWorkspace = async () => {
+    const current = workspaces.find((w) => w.id === ws);
+    const name = prompt('New name of the workspace', current?.name ?? '');
+    if (!name?.trim()) return;
+    try {
+      await backend.renameWorkspace(ws, name.trim());
+      setWorkspaces(await backend.listWorkspaces());
+    } catch (e) { alert((e as Error).message); }
+  };
+  const deleteWorkspace = async () => {
+    const current = workspaces.find((w) => w.id === ws);
+    if (!confirm(`Delete the workspace "${current?.name ?? ws}"?`)) return;
+    try {
+      await backend.deleteWorkspace(ws);
+      const list = await backend.listWorkspaces();
+      setWorkspaces(list);
+      if (list[0]) loadWs(list[0].id);
+    } catch (e) { alert((e as Error).message); }
+  };
+
   const resize = (by: number) => setMode((m) => MODES[Math.min(2, Math.max(0, MODES.indexOf(m) + by))]);
   const cardAgent = card?.kind === 'agent' ? agents.find((a) => a.id === card.id) : undefined;
   const cardFile = card?.kind === 'file' ? files.find((f) => f.id === card.id) : undefined;
@@ -198,6 +259,11 @@ export default function App() {
         <select value={ws} onChange={(e) => loadWs(e.target.value)} aria-label="Workspace">
           {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
         </select>
+        <span className="ws-actions">
+          <button onClick={newWorkspace} title="New workspace">New</button>
+          <button onClick={renameWorkspace} title="Rename this workspace">Rename</button>
+          <button onClick={deleteWorkspace} title="Delete this workspace">Delete</button>
+        </span>
         <span className="grow" />
         {running && (
           <span className="demo-controls">

@@ -44,10 +44,16 @@ export function Chat({ mode, messages, busy, hasFiles, onSend, onCite }: Props) 
           )}
           {messages.map((m) => (
             <div key={m.id} className={`msg ${m.role}`}>
-              {m.pending ? <span className="status"><i className="dot" />{m.status}</span> : (
+              {m.error ? <span className="error-text">{m.error}</span> : m.pending ? <span className="status"><i className="dot" />{m.status}</span> : (
                 <>
                   {m.placeholder && <span className="tag">Simulated</span>}
                   {m.text.split('\n\n').map((p, i) => <p key={i}>{withCitations(p, m.citations, onCite)}</p>)}
+                  {m.unverified && m.unverified.length > 0 && (
+                    <div className="unverified">
+                      <strong>Could not be verified</strong>
+                      <ul>{m.unverified.map((u, i) => <li key={i}>{u.text} <span className="muted">{u.reason}</span></li>)}</ul>
+                    </div>
+                  )}
                 </>
               )}
             </div>

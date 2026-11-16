@@ -102,6 +102,7 @@ button.agent:hover, .agent.lit { background: var(--soft); }
 .t-docx { background: #d2e0f5; color: #1c3f75; }
 .t-csv { background: #d3ebd6; color: #1f5a2a; }
 .t-md { background: #e4d8f3; color: #4a2a7a; }
+.t-image { background: #f5e6c8; color: #6b4a0e; }
 
 .bubble {
   position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); width: max-content; max-width: 230px;
@@ -199,3 +200,15 @@ h4 { margin: 10px 0 8px; }
   .shelf { width: 130px; }
 }
 .new-agent { padding: 0 0 12px; }
+
+/* The verifier: one figure beside the orchestrator. It steps into the circle to check the claims. */
+.verifier .figure::before, .verifier .figure::after { border-color: var(--accent); border-style: dotted; }
+.verifier .label { font-weight: 600; }
+.mark { position: absolute; top: -6px; right: 18px; font-size: 14px; font-weight: 700; }
+.mark.passed { color: #1f7a3a; }
+.mark.failed { color: #b3261e; }
+
+.ws-actions { display: inline-flex; gap: 4px; }
+.unverified { margin-top: 8px; padding: 6px 10px; border-left: 3px solid #b3261e; background: var(--soft); border-radius: 6px; font-size: 13px; }
+.unverified ul { margin: 4px 0 0; padding-left: 18px; }
+.error-text { color: #b3261e; }

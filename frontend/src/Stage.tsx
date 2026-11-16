@@ -18,6 +18,8 @@ export interface Huddle {
   /** Goes up by one on every broadcast, to restart the pulse animation. */
   pulse: number;
   log: LogEntry[];
+  /** The verifier while it is in the circle: checking claims, or showing its verdict. */
+  verifier: null | { state: 'checking' | 'passed' | 'failed' };
 }
 
 /** Up to this many translators are all shown. Above it, idle ones collapse into a group. */
@@ -121,6 +123,15 @@ export function Stage({ agents, files, notes, huddle, litAgent, litFile, nameOf,
           {huddle.bubble?.agentId === ORCHESTRATOR && <span className="bubble side">{huddle.bubble.text}</span>}
           <span className="figure" />
           <span className="label">Orchestrator</span>
+        </div>
+
+        <div className={`agent verifier ${huddle.verifier ? 'in' : ''}`} title="Verifier"
+          style={{ left: `calc(50% + ${huddle.verifier ? 58 : 112}px)`, top: `calc(${CENTER_Y}% + ${huddle.verifier ? 46 : 138}px)` }}>
+          {huddle.verifier && huddle.verifier.state !== 'checking' && (
+            <span className={`mark ${huddle.verifier.state}`} aria-label={huddle.verifier.state}>{huddle.verifier.state === 'passed' ? '✓' : '✗'}</span>
+          )}
+          <span className="figure" />
+          <span className="label">Verifier</span>
         </div>
       </div>
 
