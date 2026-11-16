@@ -98,8 +98,9 @@ async def test_upload_by_path_and_base64(mcp_client: Any, tmp_path: Path, settin
     assert version["version"] == 2
     folder = await mcp_client.call_tool("upload_file", {"ws": ws, "path": str(tmp_path)})
     assert folder.is_error and "not a regular file" in folder.content[0].text  # pyright: ignore[reportAttributeAccessIssue]
+    settings.max_upload_mb = 1  # the service reads the limit at call time; keeps the oversize file small
     big = tmp_path / "big.txt"
-    big.write_bytes(b"x" * (settings.max_upload_mb * 1024 * 1024 + 1))
+    big.write_bytes(b"x" * (1024 * 1024 + 1))
     oversize = await mcp_client.call_tool("upload_file", {"ws": ws, "path": str(big)})
     assert oversize.is_error and oversize.content[0].text.startswith("too_large:")  # pyright: ignore[reportAttributeAccessIssue]
 
@@ -160,34 +161,31 @@ async def test_worker_loop(settings: Settings) -> None:
         httpx.AsyncClient(transport=transport, base_url="http://test/api/v1") as http,
     ):
         client: Any = OneShotClient(build_server(http))
-        if True:
-            script = FakeRuntime([])
-            ws, sid = await _prepare(client, script)
-            started = data(
-                await client.call_tool("ask", {"ws": ws, "session_id": sid, "question": "When?", "wait": False})
-            )
-            question_id = started["question_id"]
-            while True:
-                polled = data(await client.call_tool("get_question_events", {"ws": ws, "question_id": question_id}))
-                if polled["done"]:
-                    break
-                offer = data(await client.call_tool("claim_turn", {"worker": "harness-7", "wait_s": 1}))
-                if offer is None:
-                    continue
-                request = TurnRequest(
-                    turn_id=offer["turnId"], turn_type=offer["turnType"], agent_name=offer["agentName"],
-                    agent_kind=offer["agentKind"], system_prompt="", instructions="", input=offer["input"],
-                    output_schema={}, timeout_s=10,
-                )  # fmt: skip
-                output = resolve(script._answer(request), offer["input"], offer["turnType"])  # pyright: ignore[reportPrivateUsage]
-                result = data(
-                    await client.call_tool(
-                        "submit_turn",
-                        {"turn_id": offer["turnId"], "lease_token": offer["leaseToken"], "output": output},
-                    )
+        script = FakeRuntime([])
+        ws, sid = await _prepare(client, script)
+        started = data(await client.call_tool("ask", {"ws": ws, "session_id": sid, "question": "When?", "wait": False}))
+        question_id = started["question_id"]
+        while True:
+            polled = data(await client.call_tool("get_question_events", {"ws": ws, "question_id": question_id}))
+            if polled["done"]:
+                break
+            offer = data(await client.call_tool("claim_turn", {"worker": "harness-7", "wait_s": 1}))
+            if offer is None:
+                continue
+            request = TurnRequest(
+                turn_id=offer["turnId"], turn_type=offer["turnType"], agent_name=offer["agentName"],
+                agent_kind=offer["agentKind"], system_prompt="", instructions="", input=offer["input"],
+                output_schema={}, timeout_s=10,
+            )  # fmt: skip
+            output = resolve(script._answer(request), offer["input"], offer["turnType"])  # pyright: ignore[reportPrivateUsage]
+            result = data(
+                await client.call_tool(
+                    "submit_turn",
+                    {"turn_id": offer["turnId"], "lease_token": offer["leaseToken"], "output": output},
                 )
-                assert result["accepted"] is True
-            assert polled["events"][-1]["type"] == "answer"
+            )
+            assert result["accepted"] is True
+        assert polled["events"][-1]["type"] == "answer"
     db = connect(settings.data_dir / "twyf.db")
     claimed = db.execute("SELECT source, payload FROM app_events WHERE event_type = 'turn.claimed'").fetchall()
     assert claimed and all(r["source"] == "mcp" and '"worker": "harness-7"' in r["payload"] for r in claimed)
