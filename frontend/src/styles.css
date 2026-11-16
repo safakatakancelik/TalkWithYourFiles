@@ -212,3 +212,11 @@ h4 { margin: 10px 0 8px; }
 .unverified { margin-top: 8px; padding: 6px 10px; border-left: 3px solid #b3261e; background: var(--soft); border-radius: 6px; font-size: 13px; }
 .unverified ul { margin: 4px 0 0; padding-left: 18px; }
 .error-text { color: #b3261e; }
+
+/* File statuses other than ready. A missing or changed file is dimmed with that word. */
+.status-badge { font-size: 10px; padding: 0 6px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; border: 1px solid var(--line); color: var(--muted); }
+.s-missing, .s-changed { border-color: #b3261e; color: #b3261e; }
+.s-unreadable { border-color: #8a6d1c; color: #8a6d1c; }
+tr.dim td, .tile.dim { opacity: 0.55; }
+button.small { padding: 0 6px; font-size: 11px; }
+.row-actions { white-space: nowrap; }

@@ -29,10 +29,19 @@ export interface NoteActions {
   fileName: (id: string) => string;
   onWeight: (noteIds: string[], weight: Weight) => void;
   onCite: (c: Citation) => void;
+  onEdit: (note: Note) => void;
+  onDelete: (note: Note) => void;
+}
+
+/** A status other than ready, shown beside a file. Missing and changed files are dimmed. */
+function Status({ file }: { file: FileItem }) {
+  return file.status && file.status !== 'ready' ? <span className={`status-badge s-${file.status}`}>{file.status}</span> : null;
 }
 
 /** Notes are the only link between files and agents. `by` picks which side of that link to label each note with. */
-function NoteList({ notes, by, nameOf, fileName, onWeight, onCite }: NoteActions & { notes: Note[]; by: 'author' | 'file' }) {
+function NoteList({ notes, by, version, nameOf, fileName, onWeight, onCite, onEdit, onDelete }: NoteActions & {
+  notes: Note[]; by: 'author' | 'file'; version?: number;
+}) {
   return (
     <>
       {notes.map((n) => (
@@ -40,7 +49,12 @@ function NoteList({ notes, by, nameOf, fileName, onWeight, onCite }: NoteActions
           <div className="note-head">
             <strong>{by === 'author' ? nameOf(n.authorId) : fileName(n.fileId)}</strong>
             <span className="muted">{n.kind}, {day(n.createdAt)}</span>
+            {version !== undefined && n.fileVersion !== undefined && n.fileVersion < version && (
+              <span className="badge" title="Written about an earlier version of the file">version {n.fileVersion}</span>
+            )}
             <span className="grow" />
+            {n.authorId === 'user' && <button className="small" onClick={() => onEdit(n)}>Edit</button>}
+            <button className="small" onClick={() => onDelete(n)}>Delete</button>
             <select value={n.weight} onChange={(e) => onWeight([n.id], e.target.value as Weight)} aria-label="Weight of this note">
               {WEIGHTS.map((w) => <option key={w}>{w}</option>)}
             </select>
@@ -70,8 +84,8 @@ export function Explorer({ files, notes, onUpload, onFile, onClose }: {
           <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Added</th><th>Notes</th></tr></thead>
           <tbody>
             {files.map((f) => (
-              <tr key={f.id}>
-                <td><button className="link" onClick={() => onFile(f.id)}>{f.name}</button></td>
+              <tr key={f.id} className={f.status === 'missing' || f.status === 'changed' ? 'dim' : ''}>
+                <td><button className="link" onClick={() => onFile(f.id)}>{f.name}</button> <Status file={f} /></td>
                 <td><span className={`badge t-${f.type}`}>{f.type}</span></td>
                 <td>{size(f.sizeKb)}</td>
                 <td>{day(f.uploadedAt)}</td>
@@ -127,21 +141,26 @@ export function AgentsPanel({ agents, notes, onAgent, onCreate, onClose }: {
   );
 }
 
-export function Sessions({ sessions, current, onOpen, onNew, onClose }: {
-  sessions: Session[]; current: string | null; onOpen: (id: string) => void; onNew: () => void; onClose: () => void;
+export function Sessions({ sessions, current, onOpen, onNew, onRename, onDelete, onClose }: {
+  sessions: Session[]; current: string | null; onOpen: (id: string) => void; onNew: () => void;
+  onRename: (s: Session) => void; onDelete: (s: Session) => void; onClose: () => void;
 }) {
   return (
     <Drawer title="Sessions" side="left" onClose={onClose} actions={<button className="primary" onClick={onNew}>New session</button>}>
       {sessions.length === 0 && <p className="muted">No sessions yet. Ask a question to start one.</p>}
       {sessions.length > 0 && (
         <table>
-          <thead><tr><th>Session</th><th>Messages</th><th>Last used</th></tr></thead>
+          <thead><tr><th>Session</th><th>Messages</th><th>Last used</th><th /></tr></thead>
           <tbody>
             {sessions.map((s) => (
               <tr key={s.id} className={s.id === current ? 'current' : ''}>
                 <td><button className="link" onClick={() => onOpen(s.id)}>{s.title}</button></td>
                 <td>{s.messageCount}</td>
                 <td>{day(s.updatedAt)}</td>
+                <td className="row-actions">
+                  <button className="small" onClick={() => onRename(s)}>Rename</button>
+                  <button className="small" onClick={() => onDelete(s)}>Delete</button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -199,18 +218,26 @@ export function CitationPanel({ citation: c, file, foundBy, onClose }: { citatio
   );
 }
 
-export function FileCard({ file, notes, actions, onAddNote, onClose }: {
-  file: FileItem; notes: Note[]; actions: NoteActions; onAddNote: (text: string) => void; onClose: () => void;
+export function FileCard({ file, notes, actions, onAddNote, onNewVersion, onDelete, onClose }: {
+  file: FileItem; notes: Note[]; actions: NoteActions; onAddNote: (text: string) => void;
+  onNewVersion: (data: File) => void; onDelete: () => void; onClose: () => void;
 }) {
   const [text, setText] = useState('');
+  const picker = useRef<HTMLInputElement>(null);
   const about = notes.filter((n) => n.fileId === file.id);
   return (
-    <Drawer title="File" side="right" onClose={onClose}>
-      <p><strong>{file.name}</strong> <span className={`badge t-${file.type}`}>{file.type}</span></p>
-      <p className="muted">{size(file.sizeKb)}, added {day(file.uploadedAt)}. Stored as uploaded.</p>
+    <Drawer title="File" side="right" onClose={onClose}
+      actions={<>
+        <button onClick={() => picker.current?.click()}>Add new version</button>
+        <button onClick={onDelete}>Delete</button>
+      </>}>
+      <input ref={picker} type="file" hidden
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onNewVersion(f); e.target.value = ''; }} />
+      <p><strong>{file.name}</strong> <span className={`badge t-${file.type}`}>{file.type}</span> <Status file={file} /></p>
+      <p className="muted">{size(file.sizeKb)}, added {day(file.uploadedAt)}{file.version ? `, version ${file.version}` : ''}. Stored as uploaded.</p>
       <h4>Notes about this file ({about.length})</h4>
       {about.length === 0 && <p className="muted">No agent has worked on this file yet.</p>}
-      <NoteList notes={about} by="author" {...actions} />
+      <NoteList notes={about} by="author" version={file.version} {...actions} />
       <form className="input" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { onAddNote(text.trim()); setText(''); } }}>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add your own note about this file" aria-label="Your note about this file" />
         <button className="primary" disabled={!text.trim()}>Add note</button>
@@ -219,7 +246,9 @@ export function FileCard({ file, notes, actions, onAddNote, onClose }: {
   );
 }
 
-export function AgentCard({ ws, agent, notes, actions, onClose }: { ws: string; agent: Agent; notes: Note[]; actions: NoteActions; onClose: () => void }) {
+export function AgentCard({ ws, agent, notes, actions, onRename, onDelete, onClose }: {
+  ws: string; agent: Agent; notes: Note[]; actions: NoteActions; onRename: () => void; onDelete: () => void; onClose: () => void;
+}) {
   const [talk, setTalk] = useState<{ me: boolean; text: string }[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -236,7 +265,8 @@ export function AgentCard({ ws, agent, notes, actions, onClose }: { ws: string; 
   };
 
   return (
-    <Drawer title="Translator" side="right" onClose={onClose}>
+    <Drawer title="Translator" side="right" onClose={onClose}
+      actions={<><button onClick={onRename}>Rename</button><button onClick={onDelete}>Delete</button></>}>
       <p><strong>{agent.name}</strong> <span className="badge">{agent.specialty}</span></p>
       <p className="muted">{plural(mine.length, 'note')} on {plural(new Set(mine.map((n) => n.fileId)).size, 'file')}. It owns no files.</p>
       {mine.length > 0 && (

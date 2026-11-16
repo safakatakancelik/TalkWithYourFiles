@@ -48,13 +48,20 @@ export default function App() {
     id === ORCHESTRATOR ? 'Orchestrator' : id === VERIFIER ? 'Verifier' : id === 'user' ? 'You' : names.current[id] ?? id;
   const fileName = (id: string) => files.find((f) => f.id === id)?.name ?? fileNames.current[id] ?? id;
 
+  /** Names of deleted agents and files still show: notes carry `authorName`, citations `fileName`. */
+  const remember = (n: Note[], a: Agent[], f: FileItem[]) => {
+    const authors = n.flatMap((x) => (x.authorName ? [[x.authorId, x.authorName] as const] : []));
+    names.current = { ...Object.fromEntries(authors), ...Object.fromEntries(a.map((x) => [x.id, x.name])) };
+    const cited = n.flatMap((x) => x.citations).flatMap((c) => (c.fileName ? [[c.fileId, c.fileName] as const] : []));
+    fileNames.current = { ...fileNames.current, ...Object.fromEntries(cited), ...Object.fromEntries(f.map((x) => [x.id, x.name])) };
+  };
+
   const refresh = async (id: string) => {
     const [f, a, s, m, n] = await Promise.all([
       backend.listFiles(id), backend.listAgents(id), backend.listSessions(id), backend.getContextMap(id), backend.listNotes(id),
     ]);
-    fileNames.current = Object.fromEntries(f.map((x) => [x.id, x.name]));
+    remember(n, a, f);
     setNotes(n);
-    names.current = Object.fromEntries(a.map((x) => [x.id, x.name]));
     setFiles(f); setAgents(a); setSessions(s); setMap(m);
     return s;
   };
@@ -75,6 +82,13 @@ export default function App() {
   }, []);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+
+  // While any file is being processed, fetch the file list again every 2 seconds.
+  useEffect(() => {
+    if (!files.some((f) => f.status === 'processing')) return;
+    const timer = setTimeout(() => backend.listFiles(ws).then(setFiles), 2000);
+    return () => clearTimeout(timer);
+  }, [files, ws]);
   useEffect(() => { clock.paused = paused; clock.speed = speed; }, [paused, speed]);
 
   // Load a session's stored messages the first time it is opened.
@@ -219,7 +233,38 @@ export default function App() {
     setNotes(await backend.listNotes(ws));
   };
   const openCite = (c: Citation) => { setCite(c); setCard(null); };
-  const noteActions: NoteActions = { nameOf, fileName, onWeight: setWeight, onCite: openCite };
+  const attempt = async (action: () => Promise<unknown>) => {
+    try { await action(); } catch (e) { alert((e as Error).message); }
+    await refresh(ws);
+  };
+  const editNote = (n: Note) => {
+    const text = prompt('Edit your note', n.text);
+    if (text?.trim()) attempt(() => backend.editNote(ws, n.id, text.trim()));
+  };
+  const deleteNote = (n: Note) => {
+    if (confirm('Delete this note?')) attempt(() => backend.deleteNote(ws, n.id));
+  };
+  const newVersion = (fileId: string, f: File) => attempt(() => backend.addFileVersion(ws, fileId, { name: f.name, size: f.size, data: f }));
+  const deleteFile = (file: FileItem) => {
+    if (confirm(`Delete ${file.name}? Its notes are hidden with it.`)) { setCard(null); attempt(() => backend.deleteFile(ws, file.id)); }
+  };
+  const renameAgent = (agent: Agent) => {
+    const name = prompt('New name of the translator', agent.name);
+    if (name?.trim()) attempt(() => backend.renameAgent(ws, agent.id, name.trim()));
+  };
+  const deleteAgent = (agent: Agent) => {
+    if (confirm(`Delete ${agent.name}? Its notes stay.`)) { setCard(null); attempt(() => backend.deleteAgent(ws, agent.id)); }
+  };
+  const renameSession = (s: Session) => {
+    const title = prompt('New title of the session', s.title);
+    if (title?.trim()) attempt(() => backend.renameSession(ws, s.id, title.trim()));
+  };
+  const deleteSession = (s: Session) => {
+    if (!confirm(`Delete the session "${s.title}"?`)) return;
+    if (s.id === sid) setSid(null);
+    attempt(() => backend.deleteSession(ws, s.id));
+  };
+  const noteActions: NoteActions = { nameOf, fileName, onWeight: setWeight, onCite: openCite, onEdit: editNote, onDelete: deleteNote };
 
   const newWorkspace = async () => {
     const name = prompt('Name of the new workspace');
@@ -301,11 +346,13 @@ export default function App() {
 
           {panel === 'E' && <Explorer files={files} notes={notes} onUpload={upload} onFile={(id) => setCard({ kind: 'file', id })} onClose={() => setPanel(null)} />}
           {panel === 'A' && <AgentsPanel agents={agents} notes={notes} onAgent={(id) => setCard({ kind: 'agent', id })} onCreate={createAgent} onClose={() => setPanel(null)} />}
-          {panel === 'S' && <Sessions sessions={sessions} current={sid} onOpen={setSid} onNew={newSession} onClose={() => setPanel(null)} />}
+          {panel === 'S' && <Sessions sessions={sessions} current={sid} onOpen={setSid} onNew={newSession} onRename={renameSession} onDelete={deleteSession} onClose={() => setPanel(null)} />}
           {panel === 'C' && <ContextMapPanel map={map} onClose={() => setPanel(null)} />}
           {cite && <CitationPanel citation={cite} file={files.find((f) => f.id === cite.fileId)} foundBy={nameOf(cite.agentId)} onClose={() => setCite(null)} />}
-          {cardFile && <FileCard key={cardFile.id} file={cardFile} notes={notes} actions={noteActions} onAddNote={(t) => addNote(cardFile.id, t)} onClose={() => setCard(null)} />}
-          {cardAgent && <AgentCard key={cardAgent.id} ws={ws} agent={cardAgent} notes={notes} actions={noteActions} onClose={() => setCard(null)} />}
+          {cardFile && <FileCard key={cardFile.id} file={cardFile} notes={notes} actions={noteActions} onAddNote={(t) => addNote(cardFile.id, t)}
+            onNewVersion={(f) => newVersion(cardFile.id, f)} onDelete={() => deleteFile(cardFile)} onClose={() => setCard(null)} />}
+          {cardAgent && <AgentCard key={cardAgent.id} ws={ws} agent={cardAgent} notes={notes} actions={noteActions}
+            onRename={() => renameAgent(cardAgent)} onDelete={() => deleteAgent(cardAgent)} onClose={() => setCard(null)} />}
         </main>
       </div>
     </div>
