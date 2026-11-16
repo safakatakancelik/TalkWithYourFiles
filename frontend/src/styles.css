@@ -234,3 +234,21 @@ button.label3d:hover, .label3d.lit { background: var(--soft); }
 .label3d .mark { position: static; font-size: 12px; }
 .tag3d { display: block; width: max-content; font-size: 11px; color: var(--muted); pointer-events: none; }
 .tag3d.name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; padding: 1px 7px; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); }
+
+/* The 3D stage while a question runs: who works, who waits, and the story line over the floor. */
+.label3d { transition: opacity 0.4s; }
+.label3d.waiting { opacity: 0.6; }
+.doing { font-size: 10px; font-style: italic; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.doing.working { color: var(--accent); font-weight: 600; }
+.doing.waiting { color: var(--muted); }
+.bubble { transition: opacity 0.3s, transform 0.3s; }
+.bubble.leaving { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+.now3d {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1; display: flex; align-items: center; gap: 8px;
+  max-width: calc(100% - 24px); padding: 5px 12px; font-size: 13px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; box-shadow: var(--shadow); white-space: nowrap; pointer-events: none;
+}
+.now-text { overflow: hidden; text-overflow: ellipsis; animation: fade 0.4s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .now-text, .bubble { animation: none; transition: none; }
+}

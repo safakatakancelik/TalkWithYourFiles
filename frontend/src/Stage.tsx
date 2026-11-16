@@ -21,6 +21,12 @@ export interface Huddle {
   log: LogEntry[];
   /** The verifier while it is in the circle: checking claims, or showing its verdict. */
   verifier: null | { state: 'checking' | 'passed' | 'failed' };
+  /** Who is doing something right now, and what, in a few words: agent id (or ORCHESTRATOR, VERIFIER) to activity. */
+  busy: Record<string, string>;
+  /** What is happening, in one line, and since when (ms since the epoch). Null between questions. */
+  now: { text: string; since: number } | null;
+  /** Messages between agents, newest last; `from` and `to` are agent ids. Each is drawn once, when it appears. */
+  flights: { id: number; from: string; to: string }[];
 }
 
 /** The 3D floor loads on its own, so three.js stays out of the main bundle. */

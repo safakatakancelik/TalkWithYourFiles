@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls } from '@react-three/drei';
-import { Euler, Quaternion, Vector3 } from 'three';
+import { Euler, MeshStandardMaterial, Quaternion, Vector3 } from 'three';
 import type { Group, Mesh, MeshBasicMaterial } from 'three';
-import { ORCHESTRATOR } from './backend/types';
+import { ORCHESTRATOR, VERIFIER } from './backend/types';
 import type { Agent, FileItem, FileType } from './backend/types';
 import type { Huddle } from './Stage';
 
@@ -100,12 +100,15 @@ export default function Floor3D(props: Props) {
       <Canvas camera={{ position: [0, 5.6, 8.6], fov: 40 }} dpr={[1, 2]}>
         <Scene {...props} palette={palette} />
       </Canvas>
+      <NowLine now={props.huddle.now} />
     </div>
   );
 }
 
 function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, palette }: Props & { palette: Palette }) {
-  const { active, members, working } = huddle;
+  const { active, members, working, busy } = huddle;
+  // Working: its turn is running. Waiting: in the huddle while others work. Idle: no part in the question now.
+  const mode = (id: string, inHuddle: boolean): Mode => (busy[id] ? 'working' : active && inHuddle ? 'waiting' : 'idle');
   const idle = agents.filter((a) => !members.includes(a.id));
   const shown = agents.length > MAX_SHOWN ? idle.slice(0, Math.max(0, MAX_SHOWN - 1 - members.length)) : idle;
   const hidden = idle.length - shown.length;
@@ -122,6 +125,7 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
   // A question brings the orchestrator to the bucket first; the verifier steps in to check the claims.
   const orchestrator = active ? at(RING_IN, 90) : ORCHESTRATOR_WAITS;
   const verifier = huddle.verifier ? at(RING_IN, 64) : VERIFIER_WAITS;
+  const where = (id: string) => (id === ORCHESTRATOR ? orchestrator : id === VERIFIER ? verifier : spots.get(id));
 
   const fileName = (id: string) => files.find((f) => f.id === id)?.name ?? id;
   const holder = (fileId: string) => Object.keys(working).find((a) => working[a] === fileId);
@@ -146,17 +150,17 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
         const hand = by && spots.get(by);
         return (
           <FileCard key={f.id} file={f} rest={fileSpot(i, inBucket.length)} hand={hand || null}
-            lit={litFile === f.id} reading={!!by && huddle.reading === by} palette={palette} onClick={() => onFile(f.id)} />
+            lit={litFile === f.id} reading={!!by && !!busy[by]?.startsWith('reading')} palette={palette} onClick={() => onFile(f.id)} />
         );
       })}
 
       {agents.filter((a) => spots.has(a.id)).map((a) => (
         <Figure key={a.id} role="translator" target={spots.get(a.id)!} lit={litAgent === a.id} palette={palette}
-          onClick={() => onAgent(a.id)} title={a.name}
-          bubble={huddle.bubble?.agentId === a.id ? huddle.bubble.text : huddle.reading === a.id ? `reading ${fileName(working[a.id])}…` : null}
-          bubbleReading={huddle.reading === a.id && huddle.bubble?.agentId !== a.id}>
+          mode={mode(a.id, members.includes(a.id))} doing={busy[a.id]} onClick={() => onAgent(a.id)} title={a.name}
+          bubble={huddle.bubble?.agentId === a.id ? huddle.bubble.text : null}>
           <span className="label">{a.name}</span>
-          {working[a.id] && <span className="holding" title={fileName(working[a.id])}>{fileName(working[a.id])}</span>}
+          {/* While it reads, the activity line names the file. */}
+          {working[a.id] && !busy[a.id] && <span className="holding" title={fileName(working[a.id])}>{fileName(working[a.id])}</span>}
         </Figure>
       ))}
 
@@ -167,12 +171,13 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
       )}
 
       <Figure role="orchestrator" target={orchestrator} palette={palette} title="Orchestrator"
+        mode={mode(ORCHESTRATOR, true)} doing={busy[ORCHESTRATOR]}
         bubble={huddle.bubble?.agentId === ORCHESTRATOR ? huddle.bubble.text : null}>
         <span className="label strong">Orchestrator</span>
       </Figure>
       {huddle.pulse > 0 && <Pulse key={huddle.pulse} from={orchestrator} color={palette.accent} />}
 
-      <Figure role="verifier" target={verifier} palette={palette} title="Verifier">
+      <Figure role="verifier" target={verifier} palette={palette} title="Verifier" mode={mode(VERIFIER, !!huddle.verifier)} doing={busy[VERIFIER]}>
         <span className="label strong">
           Verifier
           {huddle.verifier && huddle.verifier.state !== 'checking' && (
@@ -180,6 +185,12 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
           )}
         </span>
       </Figure>
+
+      {huddle.flights.map((f) => {
+        const from = where(f.from);
+        const to = where(f.to);
+        return from && to ? <Flight key={f.id} from={from} to={to} color={palette.accent} /> : null;
+      })}
     </>
   );
 }
@@ -243,67 +254,127 @@ function FileCard({ file, rest, hand, lit, reading, palette, onClick }: {
   );
 }
 
+type Mode = 'working' | 'waiting' | 'idle';
+
+/** Keeps a bubble's text for a moment after it is gone, so it fades out instead of vanishing. */
+function useLinger(text: string | null | undefined, ms = 300) {
+  const [shown, setShown] = useState(text ?? null);
+  useEffect(() => {
+    if (text) return setShown(text);
+    const timer = setTimeout(() => setShown(null), ms);
+    return () => clearTimeout(timer);
+  }, [text, ms]);
+  return { shown, leaving: !text && shown !== null };
+}
+
 /**
- * An agent, gliding to its spot and facing the bucket. A translator is a capsule with a round head; the orchestrator is
- * taller, in a robe, with a halo turning over its head; the verifier is a hexagonal block with a faceted head.
+ * An agent, gliding to its spot and facing the bucket, with a step in its walk and a slow breath when it stands.
+ * A translator is a capsule with a round head; the orchestrator is taller, in a robe, with a halo turning over its
+ * head; the verifier is a hexagonal block with a faceted head. Working, it bobs, glows, has dots circling over its
+ * head and a pulsing ring at its feet, and its label says what it does. Waiting in the huddle, it fades back.
  */
-function Figure({ role, target, lit, faded, palette, title, onClick, bubble, bubbleReading, children }: {
-  role: Role; target: Vec; lit?: boolean; faded?: boolean; palette: Palette; title: string;
-  onClick?: () => void; bubble?: string | null; bubbleReading?: boolean; children: ReactNode;
+function Figure({ role, target, mode = 'idle', doing, lit, faded, palette, title, onClick, bubble, children }: {
+  role: Role; target: Vec; mode?: Mode; doing?: string; lit?: boolean; faded?: boolean; palette: Palette; title: string;
+  onClick?: () => void; bubble?: string | null; children: ReactNode;
 }) {
   const ref = useRef<Group>(null);
+  const body = useRef<Group>(null);
+  const ring = useRef<Mesh>(null);
+  const dots = useRef<Group>(null);
   const goal = useMemo(() => new Vector3(...target), [target[0], target[1], target[2]]);
   const centre = useMemo(() => new Vector3(), []);
-  useFrame((_, dt) => {
+  const phase = useMemo(() => Math.random() * Math.PI * 2, []);
+  const color = ROLE_COLOR[role][palette.dark ? 'dark' : 'light'];
+  // One material for the whole body, eased towards its look every frame.
+  const material = useMemo(() => new MeshStandardMaterial({ transparent: true, flatShading: role === 'verifier' }), [role]);
+  useEffect(() => { material.color.set(color); material.emissive.set(palette.accent); }, [material, color, palette.accent]);
+  useEffect(() => () => material.dispose(), [material]);
+  const working = mode === 'working';
+  const { shown, leaving } = useLinger(bubble);
+
+  useFrame(({ clock }, dt) => {
     const g = ref.current;
-    if (!g) return;
+    const b = body.current;
+    if (!g || !b) return;
+    const t = clock.elapsedTime + phase;
+    const away = g.position.distanceTo(goal);
     g.position.lerp(goal, ease(dt, 2.5));
     centre.set(0, g.position.y, 0);
     g.lookAt(centre);
+    if (!reducedMotion) {
+      const stepping = Math.min(away, 1) * Math.abs(Math.sin(t * 9)) * 0.12;
+      b.position.y = stepping + (working ? 0.05 + Math.sin(t * 5) * 0.05 : 0);
+      b.scale.y = 1 + Math.sin(t * 1.7) * 0.015;
+    }
+    material.opacity += ((mode === 'waiting' ? 0.4 : faded ? 0.5 : 1) - material.opacity) * ease(dt, 4);
+    const glow = lit ? 0.6 : working ? 0.22 + 0.12 * Math.sin(t * 4) : 0;
+    material.emissiveIntensity += (glow - material.emissiveIntensity) * ease(dt, 5);
+    if (ring.current) ring.current.scale.setScalar(working && !reducedMotion ? 1.1 + 0.15 * Math.sin(t * 4) : 1);
+    if (dots.current) {
+      const d = dots.current;
+      const size = d.scale.x + ((working ? 1 : 0) - d.scale.x) * ease(dt, 5);
+      d.scale.setScalar(size);
+      d.visible = size > 0.02;
+      if (!reducedMotion) d.rotation.y += dt * 3;
+    }
   });
   const pointer = onClick && {
     onClick: (e: { stopPropagation: () => void }) => { e.stopPropagation(); onClick(); },
     onPointerOver: () => { document.body.style.cursor = 'pointer'; },
     onPointerOut: () => { document.body.style.cursor = ''; },
   };
-  const color = ROLE_COLOR[role][palette.dark ? 'dark' : 'light'];
-  const material = <meshStandardMaterial color={color} emissive={lit ? palette.accent : '#000000'} emissiveIntensity={lit ? 0.6 : 0} transparent={faded} opacity={faded ? 0.5 : 1} flatShading={role === 'verifier'} />;
-  const top = role === 'orchestrator' ? 1.75 : 1.3;
+  const head = role === 'orchestrator' ? 1.4 : role === 'verifier' ? 1.15 : 1.18;
+  const label = (
+    <>
+      {children}
+      {mode !== 'idle' && <span className={`doing ${mode}`}>{working ? doing : 'waiting'}</span>}
+    </>
+  );
   return (
     <group ref={ref} position={target}>
       <group {...pointer}>
-        {role === 'translator' && (
-          <>
-            <mesh position-y={0.5}><capsuleGeometry args={[0.2, 0.42, 6, 16]} />{material}</mesh>
-            <mesh position-y={1.02}><sphereGeometry args={[0.16, 24, 16]} />{material}</mesh>
-          </>
-        )}
-        {role === 'orchestrator' && (
-          <>
-            <mesh position-y={0.55}><coneGeometry args={[0.32, 1.1, 32]} />{material}</mesh>
-            <mesh position-y={1.22}><sphereGeometry args={[0.18, 24, 16]} />{material}</mesh>
-            <Halo y={1.5} color={color} />
-          </>
-        )}
-        {role === 'verifier' && (
-          <>
-            <mesh position-y={0.4}><cylinderGeometry args={[0.24, 0.28, 0.8, 6]} />{material}</mesh>
-            <mesh position-y={0.98}><icosahedronGeometry args={[0.17, 0]} />{material}</mesh>
-          </>
-        )}
-        <mesh position-y={0.01} rotation-x={-Math.PI / 2}>
+        <group ref={body}>
+          {role === 'translator' && (
+            <>
+              <mesh position-y={0.5} material={material}><capsuleGeometry args={[0.2, 0.42, 6, 16]} /></mesh>
+              <mesh position-y={1.02} material={material}><sphereGeometry args={[0.16, 24, 16]} /></mesh>
+            </>
+          )}
+          {role === 'orchestrator' && (
+            <>
+              <mesh position-y={0.55} material={material}><coneGeometry args={[0.32, 1.1, 32]} /></mesh>
+              <mesh position-y={1.22} material={material}><sphereGeometry args={[0.18, 24, 16]} /></mesh>
+              <Halo y={1.5} color={color} />
+            </>
+          )}
+          {role === 'verifier' && (
+            <>
+              <mesh position-y={0.4} material={material}><cylinderGeometry args={[0.24, 0.28, 0.8, 6]} /></mesh>
+              <mesh position-y={0.98} material={material}><icosahedronGeometry args={[0.17, 0]} /></mesh>
+            </>
+          )}
+          <group ref={dots} position-y={head + (role === 'orchestrator' ? 0.32 : 0.2)} scale={0}>
+            {[0, 1, 2].map((i) => (
+              <mesh key={i} position={[Math.cos((i * 2 * Math.PI) / 3) * 0.22, 0, Math.sin((i * 2 * Math.PI) / 3) * 0.22]}>
+                <sphereGeometry args={[0.045, 12, 8]} />
+                <meshBasicMaterial color={palette.accent} />
+              </mesh>
+            ))}
+          </group>
+        </group>
+        <mesh ref={ring} position-y={0.01} rotation-x={-Math.PI / 2}>
           <ringGeometry args={[0.32, 0.37, 32]} />
-          <meshBasicMaterial color={lit ? palette.accent : color} transparent opacity={lit ? 1 : 0.6} />
+          <meshBasicMaterial color={lit || working ? palette.accent : color} transparent opacity={lit || working ? 1 : mode === 'waiting' ? 0.3 : 0.6} />
         </mesh>
       </group>
       {/* Each <Html> stays mounted and only its content changes: mounting one starts a React root. */}
-      <Html position={[0, top, 0]} zIndexRange={[40, 20]}>
-        {bubble && <span className={`bubble ${bubbleReading ? 'reading' : ''}`} title={bubble}>{short(bubble)}</span>}
+      <Html position={[0, head + (role === 'orchestrator' ? 0.55 : 0.45), 0]} zIndexRange={[40, 20]}>
+        {shown && <span key={shown} className={`bubble ${leaving ? 'leaving' : ''}`} title={shown}>{short(shown)}</span>}
       </Html>
       <Html position={[0, -0.1, 0]} zIndexRange={[20, 0]}>
         {onClick
-          ? <button className={`label3d ${lit ? 'lit' : ''}`} onClick={onClick} title={title}>{children}</button>
-          : <div className="label3d" title={title}>{children}</div>}
+          ? <button className={`label3d ${mode} ${lit ? 'lit' : ''}`} onClick={onClick} title={title}>{label}</button>
+          : <div className={`label3d ${mode}`} title={title}>{label}</div>}
       </Html>
     </group>
   );
@@ -336,6 +407,52 @@ function Halo({ y, color }: { y: number; color: string }) {
       <torusGeometry args={[0.2, 0.025, 8, 40, Math.PI * 1.6]} />
       <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
     </mesh>
+  );
+}
+
+/** A message on its way between two agents: a light arcing from one to the other, with a smaller one trailing it. */
+const FLIGHT_S = 0.9;
+function Flight({ from, to, color }: { from: Vec; to: Vec; color: string }) {
+  const lead = useRef<Mesh>(null);
+  const tail = useRef<Mesh>(null);
+  const born = useRef<number | null>(null);
+  const [a, b] = useMemo(() => [new Vector3(from[0], 1.1, from[2]), new Vector3(to[0], 1.1, to[2])], [from[0], from[2], to[0], to[2]]);
+  useFrame(({ clock }) => {
+    born.current ??= clock.elapsedTime;
+    const t = (clock.elapsedTime - born.current) / FLIGHT_S;
+    for (const [m, lag] of [[lead.current, 0], [tail.current, 0.08]] as const) {
+      if (!m) continue;
+      const k = Math.min(Math.max(t - lag, 0), 1);
+      m.position.lerpVectors(a, b, k);
+      m.position.y += Math.sin(Math.PI * k) * 0.9;
+      m.visible = t - lag > 0 && k < 1;
+    }
+  });
+  if (reducedMotion) return null;
+  return (
+    <>
+      <mesh ref={lead} visible={false}><sphereGeometry args={[0.09, 16, 12]} /><meshBasicMaterial color={color} /></mesh>
+      <mesh ref={tail} visible={false}><sphereGeometry args={[0.05, 12, 8]} /><meshBasicMaterial color={color} transparent opacity={0.5} /></mesh>
+    </>
+  );
+}
+
+/** The story line over the floor: what is happening now, and for how long, so a long turn still visibly moves on. */
+function NowLine({ now }: { now: Huddle['now'] }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!now) return;
+    const timer = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [now]);
+  if (!now) return null;
+  const seconds = Math.max(0, Math.floor((Date.now() - now.since) / 1000));
+  return (
+    <div className="now3d">
+      <span className="dot" />
+      <span key={now.since} className="now-text" aria-live="polite">{now.text}</span>
+      <span className="muted" aria-hidden="true">{seconds}s</span>
+    </div>
   );
 }
 

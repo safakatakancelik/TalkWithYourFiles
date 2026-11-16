@@ -8,11 +8,12 @@ import { AgentCard, AgentsPanel, CitationPanel, ContextMapPanel, Explorer, FileC
 import type { NoteActions } from './Panels';
 import { Stage } from './Stage';
 import type { Huddle } from './Stage';
+import { tell } from './story';
 // Demo-only imports: the "Run demo" button and its controls drive the mock's clock.
 import { clock, resetDemo } from './backend/mock';
 import { DEMO_QUESTION, DEMO_WORKSPACE } from './demo/scenario';
 
-const emptyHuddle: Huddle = { active: false, members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [], verifier: null };
+const emptyHuddle: Huddle = { active: false, members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [], verifier: null, busy: {}, now: null, flights: [] };
 /** The backend's default TWYF_MAX_VERIFY_ROUNDS. The events do not carry it. */
 const MAX_ROUNDS = 3;
 const MODES: ChatMode[] = ['bar', 'half', 'full'];
@@ -98,6 +99,8 @@ export default function App() {
 
   const apply = (ev: AgentEvent, patch: (u: Partial<ChatMsg>) => void) => {
     const log = (h: Huddle, who: string, text: string, citations?: Citation[]) => [...h.log, { who, text, citations }];
+    // Runs before the updates below, so it sees the huddle as it was before this event.
+    setHuddle((h) => ({ ...h, ...tell(h, ev, nameOf, fileName) }));
     switch (ev.type) {
       case 'started':
         setHuddle((h) => ({ ...h, active: true }));
