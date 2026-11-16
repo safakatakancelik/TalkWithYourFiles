@@ -86,11 +86,14 @@ flowchart LR
     Chunk --> Emb{"fastembed<br/>installed?"}
     Emb -- yes --> Vec["Vectors<br/>(sqlite-vec)"]
     Emb -- no --> Skip["No vectors:<br/>keyword search only"]
-    FTS --> FR["first_read turn:<br/>a translator takes the file<br/>and writes first notes"]
-    Vec --> FR
+    FTS --> Text{"any text?"}
+    Vec --> Text
+    Text -- yes --> FR["first_read turn:<br/>a translator takes the file<br/>and writes first notes"]
+    Text -- no --> Unr["unreadable:<br/>hidden from the agents,<br/>named in every answer"]
 ```
 
 - **Parsers.** Without the `rich` extra: `pypdf` for PDF (the text layer only), `python-docx` for Word, plain text, CSV. With it, Docling reads layout, tables, and scanned pages and images by OCR. A PDF with no text layer, such as a scan or an exported design, gives 0 characters with the basic parser.
+- **Files with no text.** A file whose parse gives no text is `unreadable`: the agents never see it, and every answer ends with a line naming the files that were not read. At each start, such a file is parsed again if the parser now chosen has not tried it, for example after the rich extra is installed.
 - **Versions.** Uploading new content for the same file adds a version. History tables keep every earlier state.
 - **Notes.** Translators keep notes about their files: short findings with quotes. Notes have weights, and the user can edit, delete or re-weight them. Notes are searched along with passages.
 
@@ -104,7 +107,9 @@ Is there a vector database? Yes, inside SQLite: the `sqlite-vec` extension store
 | `vector` | Nearest vectors by distance (sqlite-vec, or numpy if the extension cannot load) |
 | `hybrid` (default) | Both, merged by reciprocal rank fusion, then note weights applied |
 
-Without fastembed, `hybrid` quietly does only the keyword half. The server logs a warning at start (`fastembed is not installed`), but the `retrieval.searched` event still says `"mode": "hybrid"`.
+`./start.sh` installs fastembed by default (`--basic` leaves it out). Without it, `hybrid` does only the keyword half: the server logs a warning at start, and each `retrieval.searched` event records the search that actually ran (`keyword`, `vector` or `hybrid`). At each start, chunks and notes that have no vector yet are embedded.
+
+The default model, `BAAI/bge-small-en-v1.5`, is made for English. Text in other languages, such as Turkish, is still found by keyword, but searching it by meaning works poorly; `TWYF_EMBED_MODEL` picks another fastembed model.
 
 ## Asking a question
 
@@ -217,7 +222,7 @@ The question "did atakan do something tangible with pytorch?" in a workspace wit
 3. The orchestrator asked five times for the PDF to be read. Every search in it returned nothing, because it has no passages. The discussion ended at the step limit.
 4. The orchestrator drafted claims about the Markdown file only, saying the PDF could not be checked. The verifier supported every claim, and the chat agent wrote the answer: 212 seconds, one round.
 
-The answer was right and honest about the gap, but the run spent five steps on a file with no text. A file that extracts 0 characters is marked ready like any other, so nothing tells the orchestrator it cannot be read.
+The answer was right and honest about the gap, but the run spent five steps on a file with no text, because such a file was marked ready like any other. Now it is `unreadable`, kept from the agents and named in the answer. With the rich extra, Docling reads this PDF (about 6,500 characters), and search is hybrid.
 
 ## Where things are
 

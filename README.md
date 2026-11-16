@@ -58,13 +58,14 @@ A harness can also be the agents' model: with `./start.sh --queue` no agents sta
 | `ANTHROPIC_API_KEY` | Turns are billed to this key (Claude Code's `--bare` mode, which also skips your hooks, plugins and CLAUDE.md). Without it they run on your Claude Code login and count against your plan |
 | `--backend-only` | No UI |
 | `--queue` | No agents started: a harness does the turns |
+| `--basic` | Without the rich extra: basic parsers and keyword search only, and a much smaller install |
 | `--no-browser` | Does not open the browser |
 | `TWYF_PORT`, `TWYF_UI_PORT` | Other ports for the API and the UI |
 | `TWYF_DATA_DIR` | Another data folder |
 
 Every other setting is an environment variable with the prefix `TWYF_`; the table is in [01-architecture.md](docs/development/revision-2-backend/01-architecture.md) section 6. Running on your own Claude Code login is meant for your own use; anyone you share the app with should use their own API key.
 
-Optional: `uv sync --directory backend --extra rich` adds Docling (layout-aware PDF and Word reading, OCR for images) and fastembed (search by meaning). Without it the app uses the basic parsers and keyword search. Its first run downloads about 720 MB of models from Hugging Face.
+`./start.sh` installs the `rich` extra unless `--basic` is given: Docling (layout-aware PDF and Word reading, OCR for scans and images) and fastembed (search by meaning, so search is hybrid: keyword and vectors). The first run downloads about 450 MB of packages, then about 720 MB of models from Hugging Face as files are added. Files added before, and files that gave no text, are embedded and parsed again at the next start.
 
 ### Without the start script
 

@@ -27,7 +27,7 @@ The standard library covers the rest: `sqlite3` (the database, with FTS5 for key
 
 ## Backend: the optional `rich` extra
 
-Declared under `[project.optional-dependencies] rich`. Installed only by `uv sync --extra rich`. Without it the app uses the basic parsers and searches by keyword only.
+Declared under `[project.optional-dependencies] rich`. Installed by `./start.sh` (unless `--basic`) or by `uv sync --extra rich`. Without it the app uses the basic parsers and searches by keyword only.
 
 | Package | Version | Why it is needed | Used in |
 |---|---|---|---|

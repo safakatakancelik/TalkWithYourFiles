@@ -5,6 +5,9 @@
 #   ./start.sh --queue         no agents started here: a harness connected through MCP does the turns
 #   ./start.sh --no-browser    do not open the browser
 #   ./start.sh --backend-only  no UI: the API (and its /docs page) with the agents
+#   ./start.sh --basic         without the rich extra: basic parsers and keyword search only
+# By default the rich extra is installed: Docling reads layout and scans, fastembed adds search by meaning.
+# Its first run downloads about 450 MB of packages, then about 720 MB of models as files are added.
 # With ANTHROPIC_API_KEY set, turns are billed to that key (`claude --bare`); otherwise to your Claude Code login.
 # The API listens on $TWYF_PORT (default 8321) and the UI on $TWYF_UI_PORT (default 5173).
 set -euo pipefail
@@ -14,13 +17,15 @@ model="${TWYF_MODEL:-sonnet}"
 runtime=command
 open=--open
 ui=yes
+extra=(--extra rich)
 while [ $# -gt 0 ]; do
   case "$1" in
     --model) model="$2"; shift 2 ;;
     --queue) runtime=queue; shift ;;
     --no-browser) open=; shift ;;
     --backend-only) ui=; shift ;;
-    -h|--help) sed -n 2,9p "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --basic) extra=(); shift ;;
+    -h|--help) sed -n 2,12p "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (see ./start.sh --help)" >&2; exit 2 ;;
   esac
 done
@@ -54,6 +59,9 @@ else
   echo "Agents: none started here. In a harness connected through MCP, run the work_agent_queue prompt."
 fi
 
+# --inexact keeps packages installed by hand, such as the rich extra when this run uses --basic.
+uv sync --directory backend --inexact "${extra[@]}"
+if [ ${#extra[@]} -eq 0 ]; then echo "Search: keyword only (--basic)."; else echo "Search: hybrid, keyword and vectors."; fi
 [ -z "$ui" ] || [ -d frontend/node_modules ] || (cd frontend && npm install)
 
 # Stops the backend and the UI with everything they started, however this script ends.
@@ -61,9 +69,9 @@ stop_tree() { local child; for child in $(pgrep -P "$1"); do stop_tree "$child";
 trap 'for job in $(jobs -p); do stop_tree "$job"; done' EXIT
 trap 'exit 130' INT TERM
 
-uv run --directory backend twyf serve &
+uv run --directory backend --no-sync twyf serve &
 backend=$!
-for _ in $(seq 120); do
+for _ in $(seq 240); do
   curl -sf "$api/api/v1/health" >/dev/null && break
   kill -0 $backend 2>/dev/null || { echo "The backend did not start." >&2; exit 1; }
   sleep 0.5
