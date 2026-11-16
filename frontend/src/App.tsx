@@ -153,7 +153,14 @@ export default function App() {
         setHuddle((h) => ({ ...h, log: log(h, 'system', `Round ${ev.round} of ${MAX_ROUNDS}`) }));
         break;
       case 'leave':
-        setHuddle((h) => ({ ...h, active: false, members: h.members.filter((m) => !ev.agentIds.includes(m)), working: {}, bubble: null, reading: null, verifier: null, log: log(h, 'system', 'The huddle ended') }));
+        setHuddle((h) => {
+          const members = h.members.filter((m) => !ev.agentIds.includes(m));
+          const working = Object.fromEntries(Object.entries(h.working).filter(([a]) => !ev.agentIds.includes(a)));
+          // The question goes on after the huddle ends: the answer is still being written.
+          return members.length
+            ? { ...h, members, working, log: log(h, 'system', `${ev.agentIds.map(nameOf).join(', ')} left the huddle`) }
+            : { ...h, members, working: {}, bubble: null, reading: null, verifier: null, log: log(h, 'system', 'The huddle ended') };
+        });
         break;
       case 'context':
         setMap((m) => ({ nodes: [...m.nodes, ...ev.nodes], links: [...m.links, ...ev.links] }));
