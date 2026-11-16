@@ -27,6 +27,10 @@ const TYPE_COLOR: Record<FileType, string> = {
   pdf: '#e0796c', docx: '#6f97d6', csv: '#6dba7a', md: '#a585d6', txt: '#c9c4b8', image: '#e0b25c', other: '#b0b4bb',
 };
 
+/** A bubble shows the start of a message; the whole of it is in the chat and the huddle log. */
+const BUBBLE_CHARS = 20;
+const short = (text: string) => (text.length > BUBBLE_CHARS ? `${text.slice(0, BUBBLE_CHARS).trimEnd()}…` : text);
+
 type Vec = [number, number, number];
 /** A point on the floor. 90 degrees faces the camera. */
 const at = (r: number, deg: number): Vec => {
@@ -140,9 +144,7 @@ function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFi
           bubble={huddle.bubble?.agentId === a.id ? huddle.bubble.text : huddle.reading === a.id ? `reading ${fileName(working[a.id])}…` : null}
           bubbleReading={huddle.reading === a.id && huddle.bubble?.agentId !== a.id}>
           <span className="label">{a.name}</span>
-          {working[a.id]
-            ? <span className="holding" title={fileName(working[a.id])}>{fileName(working[a.id])}</span>
-            : <span className="badge">{a.specialty}</span>}
+          {working[a.id] && <span className="holding" title={fileName(working[a.id])}>{fileName(working[a.id])}</span>}
         </Figure>
       ))}
 
@@ -267,7 +269,7 @@ function Figure({ target, color, edge, lit, faded, palette, title, onClick, bubb
       </group>
       {/* Each <Html> stays mounted and only its content changes: mounting one starts a React root. */}
       <Html position={bubbleSide ? [0.3, 1.2, 0] : [0, 1.3, 0]} zIndexRange={[40, 20]}>
-        {bubble && <span className={`bubble ${bubbleSide ? 'side' : ''} ${bubbleReading ? 'reading' : ''}`}>{bubble}</span>}
+        {bubble && <span className={`bubble ${bubbleSide ? 'side' : ''} ${bubbleReading ? 'reading' : ''}`} title={bubble}>{short(bubble)}</span>}
       </Html>
       <Html position={[0, -0.1, 0]} zIndexRange={[20, 0]}>
         {onClick
