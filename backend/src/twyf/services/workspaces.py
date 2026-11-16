@@ -1,3 +1,4 @@
+import builtins
 import sqlite3
 
 from twyf.agents.definitions import current_version, resolve
@@ -35,7 +36,7 @@ def _wire(row: sqlite3.Row) -> Workspace:
     return Workspace(id=row["id"], name=row["name"])
 
 
-def list(ctx: RequestContext, input: ListWorkspacesInput) -> list[Workspace]:
+def list(ctx: RequestContext, input: ListWorkspacesInput) -> builtins.list[Workspace]:
     with state.db() as conn:
         return [_wire(r) for r in repo.list(conn, ctx.user_id)]
 

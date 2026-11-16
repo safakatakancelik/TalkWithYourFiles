@@ -1,3 +1,4 @@
+import builtins
 import importlib
 import importlib.util
 import os
@@ -126,7 +127,7 @@ def add_version(ctx: RequestContext, input: AddFileVersionInput, *, name: str, s
         return _item(conn, _live(conn, input.ws, input.file_id))
 
 
-def list(ctx: RequestContext, input: ListFilesInput) -> list[FileItem]:
+def list(ctx: RequestContext, input: ListFilesInput) -> builtins.list[FileItem]:
     with state.db() as conn:
         require(conn, input.ws)
         integrity.verify_workspace(conn, ctx, input.ws)

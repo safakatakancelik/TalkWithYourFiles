@@ -53,7 +53,7 @@ def _translator(conn: sqlite3.Connection, ws_id: str, agent_id: str) -> AgentRow
     return agent
 
 
-def list(ctx: RequestContext, input: ListAgentsInput) -> list[Agent]:
+def list(ctx: RequestContext, input: ListAgentsInput) -> builtins.list[Agent]:
     with state.db() as conn:
         require(conn, input.ws)
         return [_wire(a) for a in repo.list(conn, input.ws, "translator")]

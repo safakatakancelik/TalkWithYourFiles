@@ -22,7 +22,7 @@ from twyf.services.workspaces import require
 EVIDENCE_KINDS = ("summary", "finding")
 
 
-def note_to_wire(conn: sqlite3.Connection, row: sqlite3.Row, numbers: list[int] | None = None) -> Note:
+def note_to_wire(conn: sqlite3.Connection, row: sqlite3.Row, numbers: builtins.list[int] | None = None) -> Note:
     """A v_notes row on the wire. Citations are numbered from 1 unless `numbers` gives the question's numbering."""
     ids = repo.citation_ids(conn, row["id"])
     marks = numbers if numbers is not None else builtins.list(range(1, len(ids) + 1))
@@ -69,8 +69,8 @@ def create_agent_note(
     author_id: str,
     kind: str,
     text: str,
-    citation_ids: list[str],
-    numbers: list[int],
+    citation_ids: builtins.list[str],
+    numbers: builtins.list[int],
     question_id: str | None,
     turn_id: str | None,
 ) -> NoteRow:
@@ -104,7 +104,7 @@ def create_agent_note(
     return row
 
 
-def list(ctx: RequestContext, input: ListNotesInput) -> list[Note]:
+def list(ctx: RequestContext, input: ListNotesInput) -> builtins.list[Note]:
     with state.db() as conn:
         require(conn, input.ws)
         return [note_to_wire(conn, row) for row in repo.list(conn, input.ws)]
