@@ -71,6 +71,7 @@ Then ask the demo question in workspace `demo` (see `docs/development/revision-2
 - Backend plan and design: [docs/development/revision-2-backend/](docs/development/revision-2-backend/)
 - UI design: [docs/development/revision-2-initialization/design.md](docs/development/revision-2-initialization/design.md)
 - Backend commands and tests: [backend/README.md](backend/README.md)
+- Every dependency and why it is needed: [docs/dependencies.md](docs/dependencies.md)
 - Previous version: [docs/versions/revision-1.md](docs/versions/revision-1.md)
 
 ## License
