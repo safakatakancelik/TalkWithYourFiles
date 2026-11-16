@@ -1,0 +1,880 @@
+[
+  {
+    "match": {
+      "turn_type": "plan",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "broadcastText": "Who can take supplier price changes, our current prices, or our margin target?",
+      "broadcastTo": [
+        "a-t1",
+        "a-t2",
+        "a-contracts",
+        "a-finance",
+        "a-people"
+      ],
+      "directCalls": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "volunteer",
+      "agent_name": "Contracts translator"
+    },
+    "output": {
+      "volunteer": true,
+      "reason": "The supplier contract sets the price change.",
+      "fileIds": [
+        "f-contract"
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "volunteer",
+      "agent_name": "Finance translator"
+    },
+    "output": {
+      "volunteer": true,
+      "reason": "The sales file has our prices and costs.",
+      "fileIds": [
+        "f-sales"
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "volunteer",
+      "agent_name": "Translator 1"
+    },
+    "output": {
+      "volunteer": true,
+      "reason": "The board notes set the margin target.",
+      "fileIds": [
+        "f-board"
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "volunteer",
+      "agent_name": "Translator 2"
+    },
+    "output": {
+      "volunteer": false,
+      "reason": "Nothing in my notes is about prices.",
+      "fileIds": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "volunteer",
+      "agent_name": "People translator"
+    },
+    "output": {
+      "volunteer": false,
+      "reason": "Staff matters are not asked about.",
+      "fileIds": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "assign",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "assignments": [
+        {
+          "agentId": "a-contracts",
+          "fileIds": [
+            "f-contract"
+          ],
+          "focus": "the January 2027 price change"
+        },
+        {
+          "agentId": "a-finance",
+          "fileIds": [
+            "f-sales"
+          ],
+          "focus": "current prices, costs and margin"
+        },
+        {
+          "agentId": "a-t1",
+          "fileIds": [
+            "f-board"
+          ],
+          "focus": "the board's decisions on prices and margin"
+        }
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "work",
+      "agent_name": "Contracts translator"
+    },
+    "output": {
+      "statements": [
+        {
+          "text": "Clause 4.2: from 1 January 2027 the green coffee price rises by 8%.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "eight percent"
+              },
+              "quote": "From 1 January 2027 the Price shall increase by eight percent (8%)"
+            }
+          ]
+        }
+      ],
+      "notes": [
+        {
+          "fileId": "f-contract",
+          "kind": "finding",
+          "text": "Green coffee rises 8% from 1 January 2027.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "eight percent"
+              },
+              "quote": "From 1 January 2027 the Price shall increase by eight percent (8%)"
+            }
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "label": "January 2027 price increase",
+          "type": "decision",
+          "passageId": {
+            "$passage": "eight percent"
+          }
+        }
+      ],
+      "searches": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "work",
+      "agent_name": "Finance translator"
+    },
+    "output": {
+      "statements": [
+        {
+          "text": "Q3 2026: average price $29.00 per kg, cost of goods $13.05, of which green coffee $7.60.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "avg_price_per_kg=29.00"
+              },
+              "quote": "avg_price_per_kg=29.00, cogs_per_kg=13.05, green_coffee_per_kg=7.60"
+            }
+          ]
+        }
+      ],
+      "notes": [
+        {
+          "fileId": "f-sales",
+          "kind": "finding",
+          "text": "Q3 average price $29.00, cost of goods $13.05, green coffee $7.60.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "avg_price_per_kg=29.00"
+              },
+              "quote": "avg_price_per_kg=29.00, cogs_per_kg=13.05, green_coffee_per_kg=7.60"
+            }
+          ]
+        }
+      ],
+      "entities": [],
+      "searches": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "work",
+      "agent_name": "Translator 1"
+    },
+    "output": {
+      "statements": [
+        {
+          "text": "Item 3: the board holds retail prices until March 2027 and keeps the 55% margin target.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "hold retail prices"
+              },
+              "quote": "hold retail prices at current levels until the March 2027 meeting"
+            }
+          ]
+        }
+      ],
+      "notes": [
+        {
+          "fileId": "f-board",
+          "kind": "finding",
+          "text": "Retail prices held until March 2027; margin target 55%.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "hold retail prices"
+              },
+              "quote": "hold retail prices at current levels until the March 2027 meeting"
+            }
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "label": "January 2027 price increase",
+          "type": "decision",
+          "passageId": {
+            "$passage": "hold retail prices"
+          }
+        }
+      ],
+      "searches": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "review",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "decision": "continue",
+      "say": "A price rise on green coffee may trigger a price review. Translator 2, please check the pricing policy.",
+      "followups": [
+        {
+          "agentId": "a-t2",
+          "focus": "when a price review is required",
+          "fileIds": [
+            "f-pricing"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "work",
+      "agent_name": "Translator 2"
+    },
+    "output": {
+      "statements": [
+        {
+          "text": "Section 2: a review is required when cost of goods moves more than 5%.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "price review is required"
+              },
+              "quote": "A price review is required whenever cost of goods moves by more than 5%"
+            }
+          ]
+        }
+      ],
+      "notes": [
+        {
+          "fileId": "f-pricing",
+          "kind": "finding",
+          "text": "A price review is required when cost of goods moves more than 5%.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "price review is required"
+              },
+              "quote": "A price review is required whenever cost of goods moves by more than 5%"
+            }
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "label": "January 2027 price increase",
+          "type": "decision",
+          "passageId": {
+            "$passage": "price review is required"
+          }
+        }
+      ],
+      "searches": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "review",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "decision": "continue",
+      "say": "Finance translator, what does the increase do to our margin?",
+      "followups": [
+        {
+          "agentId": "a-finance",
+          "focus": "the margin after the increase",
+          "fileIds": []
+        }
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "work",
+      "agent_name": "Finance translator"
+    },
+    "output": {
+      "statements": [
+        {
+          "text": "Using the Contracts translator's note: with green coffee up 8%, cost of goods becomes $13.66 per kg. At $29.00 the margin falls to 52.9%.",
+          "quotes": [
+            {
+              "citationId": {
+                "$citation": "eight percent"
+              }
+            },
+            {
+              "citationId": {
+                "$citation": "avg_price_per_kg"
+              }
+            }
+          ]
+        }
+      ],
+      "notes": [],
+      "entities": [],
+      "searches": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "review",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "decision": "settle",
+      "say": "I think we have an answer. Verifier, please check the claims.",
+      "followups": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "draft_claims",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "claims": [
+        {
+          "ref": "k1",
+          "kind": "quoted",
+          "text": "Andes Green Coffee raises its price by 8% from 1 January 2027.",
+          "citationIds": [
+            {
+              "$citation": "eight percent"
+            }
+          ]
+        },
+        {
+          "ref": "k2",
+          "kind": "quoted",
+          "text": "In Q3 2026 the average price was $29.00 per kg, cost of goods was $13.05 per kg, of which green coffee was $7.60, and gross margin was 55.0%.",
+          "citationIds": [
+            {
+              "$citation": "avg_price_per_kg"
+            }
+          ]
+        },
+        {
+          "ref": "k3",
+          "kind": "quoted",
+          "text": "The board holds retail prices until the March 2027 meeting and keeps the gross margin target at 55%.",
+          "citationIds": [
+            {
+              "$citation": "hold retail prices"
+            }
+          ]
+        },
+        {
+          "ref": "k4",
+          "kind": "quoted",
+          "text": "The pricing policy requires a price review now, because cost of goods moves by more than 5%.",
+          "citationIds": [
+            {
+              "$citation": "price review is required"
+            }
+          ]
+        },
+        {
+          "ref": "k5",
+          "kind": "derived",
+          "text": "With green coffee up 8%, cost of goods becomes $13.66 per kg and gross margin at $29.00 falls to 52.9%.",
+          "derivedFrom": [
+            "k1",
+            "k2"
+          ],
+          "expression": "1 - (13.05 + 7.60 * 0.08) / 29.00",
+          "statedResult": 0.529
+        },
+        {
+          "ref": "k6",
+          "kind": "derived",
+          "text": "Keeping a 55% margin needs a price of about $30.35 per kg, a rise of about 4.7%.",
+          "derivedFrom": [
+            "k1",
+            "k2",
+            "k3"
+          ],
+          "expression": "(13.05 + 7.60 * 0.08) / (1 - 0.55)",
+          "statedResult": 30.35
+        }
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "verify",
+      "agent_name": "Verifier"
+    },
+    "output": {
+      "verdicts": [
+        {
+          "claimId": {
+            "$claim": "raises its price by 8%"
+          },
+          "verdict": "supported",
+          "reason": "Clause 4.2 states the 8% increase from 1 January 2027.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "eight percent"
+              },
+              "supports": "full"
+            }
+          ]
+        },
+        {
+          "claimId": {
+            "$claim": "In Q3 2026"
+          },
+          "verdict": "supported",
+          "reason": "The total row gives these figures.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "avg_price_per_kg"
+              },
+              "supports": "full"
+            }
+          ]
+        },
+        {
+          "claimId": {
+            "$claim": "holds retail prices"
+          },
+          "verdict": "supported",
+          "reason": "Item 3 states both decisions.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "hold retail prices"
+              },
+              "supports": "full"
+            }
+          ]
+        },
+        {
+          "claimId": {
+            "$claim": "requires a price review now"
+          },
+          "verdict": "partly_supported",
+          "reason": "The passage gives the 5% rule. Nothing cited shows that cost of goods moves by more than 5%.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "price review is required"
+              },
+              "supports": "partial"
+            }
+          ]
+        },
+        {
+          "claimId": {
+            "$claim": "falls to 52.9%"
+          },
+          "verdict": "supported",
+          "reason": "The inputs and the calculation give 52.9%.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "eight percent"
+              },
+              "supports": "full"
+            },
+            {
+              "citationId": {
+                "$citation": "avg_price_per_kg"
+              },
+              "supports": "full"
+            }
+          ]
+        },
+        {
+          "claimId": {
+            "$claim": "Keeping a 55% margin"
+          },
+          "verdict": "supported",
+          "reason": "The calculation follows from the inputs.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "eight percent"
+              },
+              "supports": "full"
+            },
+            {
+              "citationId": {
+                "$citation": "avg_price_per_kg"
+              },
+              "supports": "full"
+            },
+            {
+              "citationId": {
+                "$citation": "hold retail prices"
+              },
+              "supports": "full"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "review",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "decision": "continue",
+      "say": "The verifier found no evidence that cost of goods moves more than 5%. Finance translator, how much does it move?",
+      "followups": [
+        {
+          "agentId": "a-finance",
+          "focus": "how much cost of goods moves",
+          "fileIds": []
+        }
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "work",
+      "agent_name": "Finance translator"
+    },
+    "output": {
+      "statements": [
+        {
+          "text": "Cost of goods moves from $13.05 to $13.66 per kg, which is 4.7%. That is under the 5% trigger.",
+          "quotes": [
+            {
+              "citationId": {
+                "$citation": "eight percent"
+              }
+            },
+            {
+              "citationId": {
+                "$citation": "avg_price_per_kg"
+              }
+            }
+          ]
+        }
+      ],
+      "notes": [
+        {
+          "fileId": "f-sales",
+          "kind": "finding",
+          "text": "Cost of goods moves about 4.7%, under the 5% review trigger.",
+          "quotes": [
+            {
+              "passageId": {
+                "$passage": "avg_price_per_kg=29.00"
+              },
+              "quote": "avg_price_per_kg=29.00, cogs_per_kg=13.05, green_coffee_per_kg=7.60"
+            }
+          ]
+        }
+      ],
+      "entities": [],
+      "searches": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "review",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "decision": "settle",
+      "say": "Settled: the margin target is missed unless prices rise about 4.7%, and the policy does not force a review.",
+      "followups": []
+    }
+  },
+  {
+    "match": {
+      "turn_type": "draft_claims",
+      "agent_name": "Orchestrator"
+    },
+    "output": {
+      "claims": [
+        {
+          "ref": "k1",
+          "kind": "quoted",
+          "text": "Andes Green Coffee raises its price by 8% from 1 January 2027.",
+          "citationIds": [
+            {
+              "$citation": "eight percent"
+            }
+          ]
+        },
+        {
+          "ref": "k2",
+          "kind": "quoted",
+          "text": "In Q3 2026 the average price was $29.00 per kg, cost of goods was $13.05 per kg, of which green coffee was $7.60, and gross margin was 55.0%.",
+          "citationIds": [
+            {
+              "$citation": "avg_price_per_kg"
+            }
+          ]
+        },
+        {
+          "ref": "k3",
+          "kind": "quoted",
+          "text": "The board holds retail prices until the March 2027 meeting and keeps the gross margin target at 55%.",
+          "citationIds": [
+            {
+              "$citation": "hold retail prices"
+            }
+          ]
+        },
+        {
+          "ref": "k5",
+          "kind": "derived",
+          "text": "With green coffee up 8%, cost of goods becomes $13.66 per kg and gross margin at $29.00 falls to 52.9%.",
+          "derivedFrom": [
+            "k1",
+            "k2"
+          ],
+          "expression": "1 - (13.05 + 7.60 * 0.08) / 29.00",
+          "statedResult": 0.529
+        },
+        {
+          "ref": "k6",
+          "kind": "derived",
+          "text": "Keeping a 55% margin needs a price of about $30.35 per kg, a rise of about 4.7%.",
+          "derivedFrom": [
+            "k1",
+            "k2",
+            "k3"
+          ],
+          "expression": "(13.05 + 7.60 * 0.08) / (1 - 0.55)",
+          "statedResult": 30.35
+        },
+        {
+          "ref": "k4b",
+          "kind": "quoted",
+          "text": "The pricing policy requires a price review when cost of goods moves by more than 5%.",
+          "citationIds": [
+            {
+              "$citation": "price review is required"
+            }
+          ]
+        },
+        {
+          "ref": "k7",
+          "kind": "derived",
+          "text": "Cost of goods rises by about 4.7%, which is below the 5% review trigger.",
+          "derivedFrom": [
+            "k1",
+            "k2",
+            "k4b"
+          ],
+          "expression": "7.60 * 0.08 / 13.05",
+          "statedResult": 0.047
+        },
+        {
+          "ref": "k8",
+          "kind": "derived",
+          "text": "The price hold and the 55% margin target cannot both be kept.",
+          "derivedFrom": [
+            "k3",
+            "k5"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "verify",
+      "agent_name": "Verifier"
+    },
+    "output": {
+      "verdicts": [
+        {
+          "claimId": {
+            "$claim": "requires a price review when"
+          },
+          "verdict": "supported",
+          "reason": "The policy states the 5% trigger.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "price review is required"
+              },
+              "supports": "full"
+            }
+          ]
+        },
+        {
+          "claimId": {
+            "$claim": "below the 5% review trigger"
+          },
+          "verdict": "supported",
+          "reason": "7.60 x 8% / 13.05 is 4.7%, below 5%.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "eight percent"
+              },
+              "supports": "full"
+            },
+            {
+              "citationId": {
+                "$citation": "avg_price_per_kg"
+              },
+              "supports": "full"
+            },
+            {
+              "citationId": {
+                "$citation": "price review is required"
+              },
+              "supports": "full"
+            }
+          ]
+        },
+        {
+          "claimId": {
+            "$claim": "cannot both be kept"
+          },
+          "verdict": "supported",
+          "reason": "Holding prices gives 52.9%, below the 55% target.",
+          "citations": [
+            {
+              "citationId": {
+                "$citation": "hold retail prices"
+              },
+              "supports": "full"
+            },
+            {
+              "citationId": {
+                "$citation": "eight percent"
+              },
+              "supports": "full"
+            },
+            {
+              "citationId": {
+                "$citation": "avg_price_per_kg"
+              },
+              "supports": "full"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "match": {
+      "turn_type": "write_answer",
+      "agent_name": "Chat"
+    },
+    "output": {
+      "segments": [
+        {
+          "text": "Not without changing something."
+        },
+        {
+          "text": "From 1 January 2027, Andes Green Coffee raises its price by 8%.",
+          "claimIds": [
+            {
+              "$claim": "raises its price by 8%"
+            }
+          ]
+        },
+        {
+          "text": "At Q3 prices and costs, that takes gross margin from 55.0% to about 52.9%.",
+          "claimIds": [
+            {
+              "$claim": "In Q3 2026"
+            },
+            {
+              "$claim": "falls to 52.9%"
+            }
+          ]
+        },
+        {
+          "text": "That is below the board's 55% target.",
+          "claimIds": [
+            {
+              "$claim": "holds retail prices"
+            }
+          ]
+        },
+        {
+          "text": "The board also decided to hold retail prices until March 2027.",
+          "claimIds": [
+            {
+              "$claim": "holds retail prices"
+            }
+          ],
+          "newParagraph": true
+        },
+        {
+          "text": "The pricing policy requires a review only when cost of goods moves more than 5%.",
+          "claimIds": [
+            {
+              "$claim": "requires a price review when"
+            }
+          ]
+        },
+        {
+          "text": "This change is about 4.7%, so the policy does not force one.",
+          "claimIds": [
+            {
+              "$claim": "below the 5% review trigger"
+            }
+          ]
+        },
+        {
+          "text": "To stay at 55% you would need a price of about $30.35 per kg, a rise of about 4.7%.",
+          "claimIds": [
+            {
+              "$claim": "Keeping a 55% margin"
+            }
+          ]
+        },
+        {
+          "text": "The price hold and the margin target cannot both be kept.",
+          "claimIds": [
+            {
+              "$claim": "cannot both be kept"
+            }
+          ]
+        },
+        {
+          "text": "This needs a board decision."
+        }
+      ]
+    }
+  }
+]

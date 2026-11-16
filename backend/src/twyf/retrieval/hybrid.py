@@ -30,8 +30,9 @@ class Passage(Wire):
 
 class Retriever(Protocol):
     def search(
-        self, ctx: RequestContext, *, workspace_id: str, query: str, file_ids: list[str] | None, k: int
-    ) -> list[Passage]: ...
+        self, ctx: RequestContext, *, workspace_id: str, query: str, file_ids: list[str] | None, k: int,
+        question_id: str | None = None, round_id: str | None = None,
+    ) -> list[Passage]: ...  # fmt: skip
 
 
 def passages(conn: sqlite3.Connection, scored: list[tuple[int, float]]) -> list[Passage]:
@@ -95,6 +96,8 @@ class HybridRetriever:
         file_ids: list[str] | None,
         k: int,
         boost: Callable[[int], float] | None = None,
+        question_id: str | None = None,
+        round_id: str | None = None,
     ) -> list[Passage]:
         mode = self.settings.retrieval_mode
         conn = self._connect()
@@ -117,7 +120,7 @@ class HybridRetriever:
             result = passages(conn, ranked)
             with transaction(conn):
                 record(
-                    conn, ctx, "retrieval.searched", workspace_id=workspace_id,
+                    conn, ctx, "retrieval.searched", workspace_id=workspace_id, question_id=question_id, round_id=round_id,
                     payload={"query": query, "mode": mode, "file_ids": file_ids, "chunk_ids": [p.chunk_id for p in result]},
                 )  # fmt: skip
             return result

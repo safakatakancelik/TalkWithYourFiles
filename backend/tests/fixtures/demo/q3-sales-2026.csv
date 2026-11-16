@@ -1,0 +1,5 @@
+channel,total_kg,avg_price_per_kg,cogs_per_kg,green_coffee_per_kg,gross_margin
+Retail,2100,32.00,13.05,7.60,59.2%
+Wholesale,2450,26.50,13.05,7.60,50.8%
+Online,600,28.70,13.05,7.60,54.5%
+Total Q3 2026,5150,29.00,13.05,7.60,55.0%

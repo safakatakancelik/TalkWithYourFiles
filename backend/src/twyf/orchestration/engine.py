@@ -511,7 +511,7 @@ class Engine:
         query = f"{q.text} {a.focus}".strip()
         passages = await asyncio.to_thread(
             self.retriever.search, agent_ctx, workspace_id=q.workspace_id, query=query, file_ids=file_ids,
-            k=self.settings.passages_per_turn,
+            k=self.settings.passages_per_turn, question_id=q.question_id, round_id=q.round_id,
         )  # fmt: skip
         notes = await self._db(
             lambda c: notes_for_turn(c, workspace_id=q.workspace_id, file_ids=file_ids, query=query), write=False
@@ -535,7 +535,8 @@ class Engine:
                     targets = [search.file_id] if search.file_id in file_ids else file_ids
                     found = await asyncio.to_thread(
                         self.retriever.search, agent_ctx, workspace_id=q.workspace_id, query=search.query,
-                        file_ids=targets, k=self.settings.passages_per_turn,
+                        file_ids=targets, k=self.settings.passages_per_turn, question_id=q.question_id,
+                        round_id=q.round_id,
                     )  # fmt: skip
                     passages += [p for p in found if p.chunk_id not in seen]
                     seen |= {p.chunk_id for p in found}

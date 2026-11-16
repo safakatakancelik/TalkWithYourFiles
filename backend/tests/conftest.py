@@ -162,3 +162,16 @@ def harness(
     from tests.unit.orchestration.harness import Harness
 
     return Harness(ws, ctx, conn, settings, fake, retriever)
+
+
+DEMO_FIXTURES = REPO_ROOT / "backend" / "tests" / "fixtures" / "demo"
+
+
+@pytest.fixture
+def demo(synced: None, jobs: InlineJobs, settings: Settings) -> str:
+    """The demo workspace seeded as 10-demo-scenario.md section 3 says. Its id."""
+    from twyf.services import demo as demo_service
+
+    ctx = RequestContext(actor_id="system", source="cli", user_id="u_local", request_id="seed")
+    demo_service.seed(ctx, settings, DEMO_FIXTURES)
+    return demo_service.WORKSPACE[0]

@@ -25,6 +25,16 @@ def _check_secrets(value: Any) -> None:
             _check_secrets(inner)
 
 
+def _definition_in_force(conn: sqlite3.Connection, actor_id: str) -> int | None:
+    """An agent's action records the definition version it acts under (02-data-model.md section 3)."""
+    row = conn.execute(
+        "SELECT d.id FROM agent_versions v JOIN agent_definition_versions d ON d.definition_id = v.definition_id"
+        " AND d.valid_to IS NULL WHERE v.agent_id = ? AND v.valid_to IS NULL",
+        (actor_id,),
+    ).fetchone()
+    return row[0] if row is not None else None
+
+
 def record(
     conn: sqlite3.Connection,
     ctx: RequestContext,
@@ -45,6 +55,12 @@ def record(
     """Inserts one event and returns its id. A wire event is published to the question's streams on commit."""
     payload = payload or {}
     _check_secrets(payload)
+    if definition_version_id is None:
+        definition_version_id = _definition_in_force(conn, ctx.actor_id)
+    if turn_id is not None and question_id is None:
+        turn = conn.execute("SELECT question_id, round_id FROM agent_turns WHERE id = ?", (turn_id,)).fetchone()
+        if turn is not None:
+            question_id, round_id = turn["question_id"], round_id or turn["round_id"]
     cursor = conn.execute(
         "INSERT INTO app_events (occurred_at, event_type, actor_id, source, client, user_id, workspace_id,"
         " session_id, question_id, round_id, turn_id, request_id, cause_event_id, entity_type, entity_id,"
