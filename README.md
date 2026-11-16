@@ -95,6 +95,103 @@ With `./start.sh --queue` every agent turn waits in the database until a worker 
 
 One harness session does every turn, so its context keeps growing. Run it with file, shell and network tools switched off: its job needs none of them, and that keeps an instruction hidden in a file from reaching anything.
 
+## How it works
+
+The two main diagrams from [docs/how-it-works.md](docs/how-it-works.md), which also covers adding a file, search, the question's states, what is enforced, and which parts run in each way of use.
+
+**The parts.** The UI, scripts and harnesses reach one backend. The backend never calls a model itself: each agent turn goes to a runtime, and every output is validated and its quotes checked against the files.
+
+```mermaid
+flowchart LR
+    subgraph Clients
+        UI["Chat UI<br/>(React, frontend/)"]
+        Harness["AI harness<br/>(Claude Code, Codex, ...)"]
+        Script["Scripts, curl,<br/>/docs page"]
+    end
+
+    subgraph Backend["Backend (backend/src/twyf)"]
+        MCP["MCP server<br/>twyf mcp"]
+        HTTP["HTTP API + event streams<br/>twyf serve"]
+        Ops["Operation list<br/>contract/operations.py"]
+        Services["Services<br/>(the rules)"]
+        Engine["Orchestration engine<br/>+ state machine"]
+        Runner["Turn runner<br/>validate, check quotes, retry"]
+        Ingest["Ingestion<br/>parse, chunk, index, embed"]
+        Retrieval["Retrieval<br/>keyword + vector, fused"]
+        Recorder["Recorder<br/>event log + broker"]
+    end
+
+    subgraph Storage["~/.twyf"]
+        DB[("SQLite<br/>tables, FTS5, sqlite-vec,<br/>history, app_events")]
+        Files[("files/<br/>original uploads")]
+    end
+
+    subgraph Models["Where the thinking happens"]
+        Command["command runtime<br/>claude -p per turn"]
+        Queue["queue runtime<br/>a harness claims turns"]
+        Fake["fake runtime<br/>scripted, for tests"]
+    end
+
+    Agents[".agents/<br/>agent and skill texts"]
+
+    UI -- "HTTP + SSE" --> HTTP
+    Script -- HTTP --> HTTP
+    Harness -- "MCP tools" --> MCP
+    MCP -- HTTP --> HTTP
+    HTTP --> Ops --> Services
+    Services --> Ingest
+    Services --> Engine
+    Engine --> Runner
+    Engine --> Retrieval
+    Runner --> Command
+    Runner --> Queue
+    Runner --> Fake
+    Queue -. "claim_turn / submit_turn" .- MCP
+    Agents --> Runner
+    Ingest --> DB
+    Ingest --> Files
+    Retrieval --> DB
+    Services --> DB
+    Services --> Recorder --> DB
+    Recorder -- "after commit" --> HTTP
+```
+
+**Asking a question.** Translators read passages and quote them, the orchestrator decides when there is enough, and only claims the verifier supports reach the answer.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant API as Backend
+    participant O as Orchestrator
+    participant T as Translators
+    participant V as Verifier
+    participant C as Chat agent
+
+    User->>API: ask(question)
+    API->>O: plan: which files, which translators
+    O-->>API: broadcast or direct calls
+    API->>T: volunteer / assign
+    loop discussion, up to TWYF_MAX_DISCUSSION_STEPS
+        API->>API: search passages and notes for each translator
+        API->>T: work: read these passages
+        T-->>API: statements, each with quotes
+        API->>API: check every quote is in the file
+        API->>O: review the statements
+        O-->>API: continue (with follow-ups) or enough
+    end
+    API->>O: draft claims from the statements
+    O-->>API: claims, each citing passages
+    API->>V: verify each claim against its passages
+    V-->>API: verdicts
+    alt some claims fail and rounds remain
+        API->>O: review the failures, next round
+    else all supported, or rounds used up
+        API->>C: write the answer from the claims that passed
+        C-->>API: answer with citation numbers
+        API-->>User: answer, citations, verdicts
+    end
+```
+
 ## Documentation
 
 - How the parts connect, with diagrams: [docs/how-it-works.md](docs/how-it-works.md)
