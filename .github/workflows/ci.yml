@@ -36,3 +36,26 @@ jobs:
       - run: npm run gen:contract
         working-directory: frontend
       - run: git diff --exit-code contract/ frontend/src/backend/contract.gen.ts
+
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - name: Start the demo server
+        run: |
+          backend/scripts/run_demo_server.sh > demo-server.log 2>&1 &
+          curl -s --retry 60 --retry-delay 1 --retry-connrefused http://127.0.0.1:8321/api/v1/health
+      - run: npm test
+        working-directory: frontend
+        env:
+          TWYF_TEST_BACKEND_URL: http://127.0.0.1:8321
+      - if: failure()
+        run: cat demo-server.log

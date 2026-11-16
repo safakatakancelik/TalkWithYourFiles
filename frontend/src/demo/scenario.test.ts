@@ -1,16 +1,20 @@
 import { expect, test } from 'vitest';
+import { httpBackend } from '../backend/http';
 import { clock, mockBackend, resetDemo } from '../backend/mock';
 import type { AgentEvent, Backend } from '../backend/types';
 import { DEMO_QUESTION, DEMO_WORKSPACE } from './scenario';
 
-// Runs the demo scenario through the Backend interface only.
-// To test a real backend later, load the demo files into it and pass it in place of mockBackend.
-const backend: Backend = mockBackend;
+// Runs the demo scenario through the Backend interface only: on the mock, or with TWYF_TEST_BACKEND_URL set,
+// on a real server started by backend/scripts/run_demo_server.sh.
+const url = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.TWYF_TEST_BACKEND_URL;
+const backend: Backend = url ? httpBackend(url) : mockBackend;
 const ws = DEMO_WORKSPACE.id;
 
-test('the demo question triggers every kind of agent work and a fully cited answer', async () => {
-  resetDemo();
-  clock.speed = 1000;
+test('the demo question triggers every kind of agent work and a fully cited answer', { timeout: 60_000 }, async () => {
+  if (!url) {
+    resetDemo();
+    clock.speed = 1000;
+  }
   const [files, agents, before, notesBefore] = await Promise.all([
     backend.listFiles(ws), backend.listAgents(ws), backend.getContextMap(ws), backend.listNotes(ws),
   ]);
