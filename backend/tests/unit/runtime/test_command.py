@@ -44,6 +44,21 @@ async def test_command_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     assert raised.value.code == "unavailable"
     monkeypatch.delenv("FAKE_CLI_EXIT")
 
+    # Claude Code reports a failed turn (a bad API key, no credit) on stdout, not stderr: its reason is shown.
+    failed = {"type": "result", "is_error": True, "result": "Invalid API key · Fix external API key"}
+    monkeypatch.setenv("FAKE_CLI_OUTPUT", json.dumps(failed))
+    for exit_code in ("1", "0"):
+        monkeypatch.setenv("FAKE_CLI_EXIT", exit_code)
+        with pytest.raises(RuntimeError_) as raised:
+            await runtime.run_turn(_request())
+        assert raised.value.code == "unavailable" and "Invalid API key" in str(raised.value)
+    monkeypatch.setenv("FAKE_CLI_OUTPUT", "plain failure text")
+    monkeypatch.setenv("FAKE_CLI_EXIT", "1")
+    with pytest.raises(RuntimeError_) as raised:
+        await runtime.run_turn(_request())
+    assert "plain failure text" in str(raised.value)
+    monkeypatch.delenv("FAKE_CLI_EXIT")
+
     monkeypatch.setenv("FAKE_CLI_SLEEP", "5")
     started = time.monotonic()
     with pytest.raises(RuntimeError_) as raised:

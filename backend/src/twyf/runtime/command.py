@@ -45,6 +45,17 @@ def parse_output(stdout: str) -> tuple[dict[str, Any], Usage]:
         raise RuntimeError_("bad_output", str(error)) from error
 
 
+def _failure(stdout: str) -> str | None:
+    """Claude Code's reason for a failed turn (a bad API key, no credit): `{"is_error": true, "result": "..."}` on stdout."""
+    try:
+        outer = json.loads(stdout)
+    except ValueError:
+        return None
+    if isinstance(outer, dict) and cast(dict[str, Any], outer).get("is_error") is True:
+        return str(cast(dict[str, Any], outer).get("result") or "the command reported an error")
+    return None
+
+
 class CommandRuntime:
     name = "command"
     capabilities = frozenset[str]()
@@ -73,8 +84,12 @@ class CommandRuntime:
                 process.kill()
                 await process.wait()
                 raise
+        failure = _failure(stdout.decode())
         if process.returncode != 0:
-            raise RuntimeError_("unavailable", f"the command exited with {process.returncode}: {stderr.decode()[:500]}")
+            reason = stderr.decode().strip() or failure or stdout.decode().strip()
+            raise RuntimeError_("unavailable", f"the command exited with {process.returncode}: {reason[:500]}")
+        if failure:
+            raise RuntimeError_("unavailable", failure[:500])
         output, usage = parse_output(stdout.decode())
         return TurnResult(output=output, usage=usage)
 
