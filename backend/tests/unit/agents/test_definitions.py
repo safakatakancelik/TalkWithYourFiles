@@ -152,7 +152,9 @@ def test_vanished_definition_is_closed(conn: sqlite3.Connection, local: Settings
     assert resolve(conn, "translator", "finance") == _did(conn, "translator")
 
 
-def test_reverted_content_reopens_its_version(conn: sqlite3.Connection, local: Settings, agents_dir: Path) -> None:
+def test_reverted_content_reopens_its_version(
+    conn: sqlite3.Connection, local: Settings, agents_dir: Path, events: EventsHelper
+) -> None:
     md = agents_dir / "agents" / "chat" / "agent.md"
     original = md.read_text()
     _sync(conn, local)
@@ -163,6 +165,17 @@ def test_reverted_content_reopens_its_version(conn: sqlite3.Connection, local: S
     rows = _versions(conn, "chat")
     assert [r["version"] for r in rows] == [1, 2]
     assert rows[0]["valid_to"] is None and rows[1]["valid_to"] is not None
+    loaded = [e.payload for e in events("definition.loaded") if e.entity_id == "chat"]
+    assert [(p["version"], p["reopened"]) for p in loaded] == [(1, False), (2, False), (1, True)]
+
+
+def test_reverted_config_is_recorded(conn: sqlite3.Connection, settings: Settings, events: EventsHelper) -> None:
+    for rounds in (3, 4, 3):
+        with transaction(conn):
+            sync_config(conn, SYSTEM, settings.model_copy(update={"max_verify_rounds": rounds}))
+    changed = [e.payload for e in events("config.changed")]
+    assert [(p["config"]["max_verify_rounds"], p["reopened"]) for p in changed] == [(3, False), (4, False), (3, True)]
+    assert conn.execute("SELECT COUNT(*) FROM config_versions").fetchone()[0] == 2
 
 
 def _tick() -> str:

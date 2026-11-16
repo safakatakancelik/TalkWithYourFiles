@@ -151,21 +151,22 @@ def load_folder(path: Path) -> LoadedAgents:
 
 def _put_version(
     conn: sqlite3.Connection, table: str, key_col: str, key: int, sha: str, values: dict[str, Any]
-) -> tuple[int, bool]:
-    """Makes the row with this content hash current. Returns its id and whether anything changed.
+) -> tuple[int, str]:
+    """Makes the row with this content hash current. Returns its id and 'same', 'new' or 'reopened'.
 
     The schema allows one row per (key, hash), so content that returns to an earlier hash reopens that row.
+    The event recorded for it says `reopened`, so the log keeps every change in order.
     """
     rows = conn.execute(f"SELECT id, valid_to FROM {table} WHERE {key_col} = ? AND content_sha256 = ?", (key, sha))
     earlier = rows.fetchone()
     if earlier is not None and earlier["valid_to"] is None:
-        return earlier["id"], False
+        return earlier["id"], "same"
     if earlier is not None:
         now = clock.now()
         conn.execute(f"UPDATE {table} SET valid_to = ? WHERE {key_col} = ? AND valid_to IS NULL", (now, key))
         conn.execute(f"UPDATE {table} SET valid_to = NULL WHERE id = ?", (earlier["id"],))
-        return earlier["id"], True
-    return versioned.set_version(conn, table, key_col, key, {"content_sha256": sha, **values}), True
+        return earlier["id"], "reopened"
+    return versioned.set_version(conn, table, key_col, key, {"content_sha256": sha, **values}), "new"
 
 
 def _version_no(conn: sqlite3.Connection, table: str, row_id: int) -> int:
@@ -186,11 +187,11 @@ def sync(conn: sqlite3.Connection, ctx: RequestContext, settings: Settings) -> S
             "body": skill.body,
             "source_path": str(skill.source_path),
         }
-        vid, changed = _put_version(
+        vid, outcome = _put_version(
             conn, "skill_versions", "skill_id", repo.skill_id(conn, slug), skill.content_sha256, values
         )
         skill_versions[slug] = vid
-        if changed:
+        if outcome != "same":
             result.skill_version_ids.append(vid)
             version = _version_no(conn, "skill_versions", vid)
             record(
@@ -199,7 +200,7 @@ def sync(conn: sqlite3.Connection, ctx: RequestContext, settings: Settings) -> S
                 "skill.loaded",
                 entity_type="skill",
                 entity_id=slug,
-                payload={"slug": slug, "version": version},
+                payload={"slug": slug, "version": version, "reopened": outcome == "reopened"},
             )
     hashes: dict[str, str] = {}
     version_ids: dict[str, int] = {}
@@ -220,9 +221,9 @@ def sync(conn: sqlite3.Connection, ctx: RequestContext, settings: Settings) -> S
             "source_path": str(agent.source_path),
         }
         did = repo.definition_id(conn, agent.slug, agent.kind)
-        vid, changed = _put_version(conn, "agent_definition_versions", "definition_id", did, sha, values)
+        vid, outcome = _put_version(conn, "agent_definition_versions", "definition_id", did, sha, values)
         version_ids[agent.slug] = vid
-        if changed:
+        if outcome != "same":
             existing = {r[0] for r in conn.execute(
                 "SELECT skill_version_id FROM agent_definition_version_skills WHERE definition_version_id = ?", (vid,)
             )}  # fmt: skip
@@ -231,7 +232,8 @@ def sync(conn: sqlite3.Connection, ctx: RequestContext, settings: Settings) -> S
             version = _version_no(conn, "agent_definition_versions", vid)
             record(
                 conn, ctx, "definition.loaded", entity_type="definition", entity_id=agent.slug,
-                payload={"slug": agent.slug, "version": version}, definition_version_id=vid,
+                payload={"slug": agent.slug, "version": version, "reopened": outcome == "reopened"},
+                definition_version_id=vid,
             )  # fmt: skip
     _retire_vanished(conn, set(loaded.agents) | set(loaded.errors))
     return result
@@ -293,6 +295,7 @@ def sync_config(conn: sqlite3.Connection, ctx: RequestContext, settings: Setting
         return row["id"]
     now = clock.now()
     conn.execute("UPDATE config_versions SET valid_to = ? WHERE valid_to IS NULL", (now,))
+    reopened = row is not None
     if row is not None:
         conn.execute("UPDATE config_versions SET valid_to = NULL WHERE id = ?", (row["id"],))
         config_id: int = row["id"]
@@ -302,5 +305,6 @@ def sync_config(conn: sqlite3.Connection, ctx: RequestContext, settings: Setting
         )
         assert cursor.lastrowid is not None
         config_id = cursor.lastrowid
-    record(conn, ctx, "config.changed", payload={"config": json.loads(config)}, config_version_id=config_id)
+    record(conn, ctx, "config.changed", payload={"config": json.loads(config), "reopened": reopened},
+           config_version_id=config_id)  # fmt: skip
     return config_id
