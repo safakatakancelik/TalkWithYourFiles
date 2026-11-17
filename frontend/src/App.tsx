@@ -323,7 +323,9 @@ export default function App() {
   const cardAgent = card?.kind === 'agent' ? agents.find((a) => a.id === card.id) : undefined;
   const cardFile = card?.kind === 'file' ? files.find((f) => f.id === card.id) : undefined;
 
-  const chatProps = { messages: sid ? msgs[sid] ?? [] : [], busy: running, hasFiles: files.length > 0, onSend: (t: string) => send(t), onCite: openCite };
+  // A collapsed chat shows only its input row: sending from it opens it, so the question and its answer can be seen.
+  const ask = (t: string) => { setMode((m) => (m === 'bar' ? 'half' : m)); send(t); };
+  const chatProps = { messages: sid ? msgs[sid] ?? [] : [], busy: running, hasFiles: files.length > 0, onSend: ask, onCite: openCite };
   const citation = cite && <CitationPanel citation={cite} file={files.find((f) => f.id === cite.fileId)} foundBy={nameOf(cite.agentId)} onClose={() => setCite(null)} />;
   const demo = (
     <>
