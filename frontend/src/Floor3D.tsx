@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls } from '@react-three/drei';
 import { Euler, MeshStandardMaterial, Quaternion, Vector3 } from 'three';
-import type { Group, Mesh, MeshBasicMaterial } from 'three';
+import type { Group, Mesh, MeshBasicMaterial, PerspectiveCamera } from 'three';
 import { ORCHESTRATOR, VERIFIER } from './backend/types';
 import type { Agent, FileItem, FileType } from './backend/types';
 import type { Huddle } from './Stage';
@@ -91,13 +91,32 @@ export interface FloorProps {
   onAgent: (id: string) => void;
   onFile: (id: string) => void;
   onMore: () => void;
+  /** Stops drawing, while the immersive view covers the stage. */
+  paused?: boolean;
+}
+
+/**
+ * Where the stage's camera is right now, in floor units. The immersive view starts its camera here, so the switch
+ * from the stage to the room shows the same picture, and flies back here when you leave.
+ */
+export const stagePose = { position: new Vector3(0, 5.6, 8.6), target: new Vector3(0, 0.2, 0.8), fov: 40 };
+
+function PoseReporter() {
+  const controls = useThree((s) => s.controls) as unknown as { target: Vector3 } | null;
+  useFrame(({ camera }) => {
+    stagePose.position.copy(camera.position);
+    if (controls) stagePose.target.copy(controls.target);
+    stagePose.fov = (camera as PerspectiveCamera).fov;
+  });
+  return null;
 }
 
 export default function Floor3D(props: FloorProps) {
   const palette = usePalette();
   return (
     <div className="floor floor3d">
-      <Canvas camera={{ position: [0, 5.6, 8.6], fov: 40 }} dpr={[1, 2]}>
+      <Canvas camera={{ position: [0, 5.6, 8.6], fov: 40 }} dpr={[1, 2]} frameloop={props.paused ? 'never' : 'always'}>
+        <PoseReporter />
         <Scene {...props} palette={palette} />
       </Canvas>
       <NowLine now={props.huddle.now} />
@@ -138,7 +157,7 @@ export function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgen
         <>
           <ambientLight intensity={0.9} />
           <directionalLight position={[4, 8, 5]} intensity={1.4} />
-          <OrbitControls enablePan={false} target={[0, 0.2, 0.8]} minDistance={5} maxDistance={16} minPolarAngle={0.35} maxPolarAngle={1.25} enableDamping />
+          <OrbitControls makeDefault enablePan={false} target={[0, 0.2, 0.8]} minDistance={5} maxDistance={16} minPolarAngle={0.35} maxPolarAngle={1.25} enableDamping />
         </>
       )}
 

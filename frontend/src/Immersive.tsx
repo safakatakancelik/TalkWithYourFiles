@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Html, PointerLockControls } from '@react-three/drei';
-import { MeshStandardMaterial, Quaternion, Vector3 } from 'three';
-import type { Group, Mesh } from 'three';
+import { Color, MeshStandardMaterial, Quaternion, Vector3 } from 'three';
+import type { Fog, Group, LineBasicMaterial, Mesh, PerspectiveCamera } from 'three';
 import type { ChatMsg, Citation } from './backend/types';
-import { NowLine, Scene, ease, reducedMotion, usePalette } from './Floor3D';
+import { NowLine, Scene, ease, reducedMotion, stagePose, usePalette } from './Floor3D';
 import type { FloorProps, Palette } from './Floor3D';
 import { LogEntries } from './Stage';
 
@@ -15,6 +15,10 @@ import { LogEntries } from './Stage';
  * and typing while a question runs; the monitor is the 2D chat. The huddle log hangs on the north wall and opens the
  * full log. Nothing here talks to the backend: it is drawn from the same state as the regular stage, and the chat on
  * the monitor is the regular chat.
+ *
+ * It starts where the stage's 3D floor left off: the camera at the floor's angle, the huddle at the same size, no walls.
+ * Then the walls grow up out of the floor and the camera comes down to eye level behind the chat agent, the narrow
+ * view widening as it lands. Leaving plays it backwards, back to the floor's angle.
  */
 
 type Vec = [number, number, number];
@@ -36,6 +40,10 @@ const SCREEN_W = 1.6;
 const SCREEN_H = 0.95;
 /** You start behind the chat agent, with its monitor and the huddle in front of you. */
 const SPAWN: Vec = [2.9, EYE, 13.8];
+const LOOK: Vec = [0, 1.1, 0];
+const WALK_FOV = 70;
+const INTRO_S = 2.2;
+const OUTRO_S = 1.5;
 const BOARD: Vec = [0, 2.3, ROOM.z0 + 0.03];
 
 /** What you can walk up to and open: the monitor (the chat) and the log board (the huddle log). */
@@ -66,20 +74,37 @@ interface Props extends FloorProps {
   onCite: (c: Citation) => void;
   /** Buttons for the pause card, such as the demo controls. */
   actions?: ReactNode;
+  /** Asked from the controls card: the parent then sets `leaving`. */
   onExit: () => void;
+  /** Fly back up to the stage's angle and take the room away; `onLeft` follows. */
+  leaving: boolean;
+  /** Fade out: the stage's floor is under the room again. */
+  fading: boolean;
+  onEntered: () => void;
+  onLeft: () => void;
 }
 
-export default function Immersive({ messages, running, chat, citation, onCite, actions, onExit, ...floor }: Props) {
+export default function Immersive({ messages, running, chat, citation, onCite, actions, onExit, leaving, fading, onEntered, onLeft, ...floor }: Props) {
   const palette = usePalette();
   const [locked, setLocked] = useState(false);
   const [near, setNear] = useState<Target | null>(null);
   const [screen, setScreen] = useState<Target | null>(null);
+  /** The controls card. It shows only when asked for with Esc, never by itself after the way in. */
+  const [menu, setMenu] = useState(false);
+  /** The way in is over and the way out has not started: you can walk. */
+  const [free, setFree] = useState(false);
+  /** The first frame is drawn: the room fades in over the stage. */
+  const [ready, setReady] = useState(false);
+  const freeRef = useRef(false);
+  const reveal = useRef(0);
+  const unlockedByUs = useRef(false);
   const keys = useRef(new Set<string>());
   const lockedRef = useRef(false);
   const nearRef = useRef<Target | null>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
   lockedRef.current = locked;
   nearRef.current = near;
+  freeRef.current = free && !leaving;
 
   const lock = () => {
     const el = canvas.current;
@@ -87,10 +112,16 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
     // Some browsers return a promise and reject it when the lock is refused; the pause card stays up then.
     (el.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => {});
   };
+  const unlock = () => {
+    if (!document.pointerLockElement) return;
+    unlockedByUs.current = true;
+    document.exitPointerLock();
+  };
   const openScreen = (target: Target) => {
     keys.current.clear();
+    setMenu(false);
     setScreen(target);
-    if (document.pointerLockElement) document.exitPointerLock();
+    unlock();
   };
   const closeScreen = (walk: boolean) => {
     setScreen(null);
@@ -103,7 +134,11 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
         if (e.code === 'Escape') closeScreen(false);
         return;
       }
-      if (!lockedRef.current) return;
+      // Walking, Esc only releases the pointer (the browser does that, and the card opens on unlock). Standing, it toggles the card.
+      if (!lockedRef.current) {
+        if (e.code === 'Escape' && freeRef.current) setMenu((m) => !m);
+        return;
+      }
       if (e.code === 'KeyE' && nearRef.current) { openScreen(nearRef.current); return; }
       keys.current.add(e.code);
     };
@@ -119,9 +154,28 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
     };
   }, [screen]);
   useEffect(() => () => { if (document.pointerLockElement) document.exitPointerLock(); }, []);
+  useEffect(() => {
+    if (!leaving) return;
+    setMenu(false);
+    setScreen(null);
+    unlock();
+  }, [leaving]);
 
-  const onLock = useCallback(() => setLocked(true), []);
-  const onUnlock = useCallback(() => { keys.current.clear(); setLocked(false); }, []);
+  const onLock = useCallback(() => { setLocked(true); setMenu(false); }, []);
+  const onUnlock = useCallback(() => {
+    keys.current.clear();
+    setLocked(false);
+    // Released by Esc: show the controls. Released by us, to open the monitor or to leave: do not.
+    if (!unlockedByUs.current) setMenu(true);
+    unlockedByUs.current = false;
+  }, []);
+  const entered = useCallback(() => { setFree(true); onEntered(); }, [onEntered]);
+  const left = useCallback(() => onLeft(), [onLeft]);
+  const firstFrame = useCallback(() => setReady(true), []);
+  /** Standing in the room: a click on the room starts walking. */
+  const clickRoom = (e: React.MouseEvent) => {
+    if (free && !leaving && !locked && !screen && !menu && e.target === canvas.current) lock();
+  };
   const onNear = useCallback((n: Target | null) => setNear(n), []);
 
   const last = messages[messages.length - 1];
@@ -129,33 +183,40 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
   const noop = () => {};
 
   return (
-    <div className="immersive">
-      <Canvas camera={{ fov: 70, near: 0.05, far: 120, position: SPAWN }} dpr={[1, 2]}
+    <div className={`immersive ${ready ? 'ready' : ''} ${fading ? 'fading' : ''}`} onClick={clickRoom}>
+      <Canvas camera={{ fov: WALK_FOV, near: 0.05, far: 120, position: SPAWN }} dpr={[1, 2]}
         onCreated={({ gl }) => { canvas.current = gl.domElement; }}>
-        <color attach="background" args={[palette.bg]} />
-        <fog attach="fog" args={[palette.bg, 22, 48]} />
-        <ambientLight intensity={0.75} />
-        <directionalLight position={[6, 12, 8]} intensity={1.2} />
-        <pointLight position={[0, 3.4, 11]} intensity={6} distance={9} />
-        {/* Never locks by itself: only "Walk in" and the monitor's back button do. */}
+        <color attach="background" args={[palette.stage]} />
+        <fog attach="fog" args={[palette.bg, 200, 300]} />
+        {/* The stage's own lights, so the huddle looks the same in both; the lamp over the desk comes with the walls. */}
+        <ambientLight intensity={0.9} />
+        <directionalLight position={[4, 8, 5]} intensity={1.4} />
+        <Lamp reveal={reveal} />
+        {/* Never locks by itself: only a click on the room, "Walk in" and the monitor's back button do. */}
         <PointerLockControls selector="#immersive-no-auto-lock" onLock={onLock} onUnlock={onUnlock} />
-        <Player active={lockedRef} keys={keys} onNear={onNear} />
-        <Room palette={palette} />
+        <Director reveal={reveal} leaving={leaving} palette={palette} onFirstFrame={firstFrame} onEntered={entered} onLeft={left} />
+        <Player active={lockedRef} free={freeRef} keys={keys} onNear={onNear} />
+        <Room palette={palette} reveal={reveal} />
         <group scale={HUDDLE_SCALE}>
           <Scene {...floor} standalone={false} palette={palette} onAgent={noop} onFile={noop} onMore={noop} />
         </group>
-        <Desk palette={palette} />
-        <ChatAgent typing={running} status={status} palette={palette} />
-        <Monitor messages={messages} near={near === 'chat'} palette={palette} onUse={() => { if (nearRef.current === 'chat') openScreen('chat'); }} />
-        <LogBoard log={floor.huddle.log} nameOf={floor.nameOf} near={near === 'log'} palette={palette}
-          onUse={() => { if (nearRef.current === 'log') openScreen('log'); }} />
+        <Reveal reveal={reveal}>
+          <Desk palette={palette} />
+          <ChatAgent typing={running} status={status} palette={palette} labels={free && !leaving} />
+          <Monitor messages={messages} near={near === 'chat'} palette={palette} onUse={() => { if (nearRef.current === 'chat') openScreen('chat'); }} />
+          <LogBoard log={floor.huddle.log} nameOf={floor.nameOf} near={near === 'log'} palette={palette}
+            onUse={() => { if (nearRef.current === 'log') openScreen('log'); }} />
+        </Reveal>
       </Canvas>
 
       <NowLine now={floor.huddle.now} />
       {locked && <div className="crosshair" aria-hidden="true" />}
       {locked && near && <div className="use-hint"><kbd>E</kbd> {USE[near]}</div>}
+      {free && !leaving && !locked && !screen && !menu && (
+        <div className="walk-hint">Click to walk <span className="sep">·</span> <kbd>Esc</kbd> for controls</div>
+      )}
 
-      {!locked && !screen && (
+      {menu && !locked && !screen && !leaving && (
         <div className="pause">
           <div className="pause-card" role="dialog" aria-label="Immersive view">
             <h2>Immersive view</h2>
@@ -164,15 +225,15 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
               <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Walk (hold <kbd>Shift</kbd> to run)</span>
               <span><kbd>Mouse</kbd></span><span>Look around</span>
               <span><kbd>E</kbd></span><span>Use the monitor or read the log board when you face it</span>
-              <span><kbd>Esc</kbd></span><span>Stop walking and show this card</span>
+              <span><kbd>Esc</kbd></span><span>Stop walking, and show or hide this card</span>
             </div>
             <div className="pause-actions">
-              <button className="primary" onClick={lock} autoFocus>Walk in</button>
+              <button className="primary" onClick={lock} autoFocus>Walk</button>
               <button onClick={() => openScreen('chat')}>Use the monitor</button>
               <button onClick={() => openScreen('log')}>Read the huddle log</button>
               {actions}
               <span className="grow" />
-              <button onClick={onExit}>Leave immersive view</button>
+              <button onClick={() => { setMenu(false); onExit(); }}>Leave immersive view</button>
             </div>
           </div>
         </div>
@@ -199,15 +260,123 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
   );
 }
 
+const smooth = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+const part = (t: number, from: number, to: number) => clamp((t - from) / (to - from), 0, 1);
+
+interface Flight { kind: 'in' | 'out'; t: number; seconds: number; p0: Vector3; p1: Vector3; l0: Vector3; l1: Vector3; f0: number; f1: number }
+
+/**
+ * Moves the camera on the way in and out, and sets `reveal`: 0 is the stage's floor alone, 1 the whole room. Walls,
+ * furniture and the lamp grow with it, and the background and the fog turn from the stage's into the room's.
+ */
+function Director({ reveal, leaving, palette, onFirstFrame, onEntered, onLeft }: {
+  reveal: RefObject<number>; leaving: boolean; palette: Palette; onFirstFrame: () => void; onEntered: () => void; onLeft: () => void;
+}) {
+  const camera = useThree((s) => s.camera) as PerspectiveCamera;
+  const scene = useThree((s) => s.scene);
+  const flight = useRef<Flight | null>(null);
+  const drawn = useRef(false);
+  const look = useMemo(() => new Vector3(), []);
+  const colors = useMemo(() => ({ stage: new Color(), room: new Color() }), []);
+  useEffect(() => { colors.stage.set(palette.stage); colors.room.set(palette.bg); }, [colors, palette.stage, palette.bg]);
+  const stageView = () => ({
+    p: stagePose.position.clone().multiplyScalar(HUDDLE_SCALE),
+    l: stagePose.target.clone().multiplyScalar(HUDDLE_SCALE),
+    fov: stagePose.fov,
+  });
+  const aim = (fov: number) => { camera.fov = fov; camera.updateProjectionMatrix(); };
+
+  useLayoutEffect(() => {
+    if (reducedMotion) {
+      camera.position.set(...SPAWN);
+      camera.lookAt(...LOOK);
+      reveal.current = 1;
+      return;
+    }
+    // The first frame shows what the stage's floor shows: same angle, same size, no walls yet.
+    const from = stageView();
+    camera.position.copy(from.p);
+    camera.lookAt(from.l);
+    aim(from.fov);
+    reveal.current = 0;
+    flight.current = { kind: 'in', t: 0, seconds: INTRO_S, p0: from.p, p1: new Vector3(...SPAWN), l0: from.l, l1: new Vector3(...LOOK), f0: from.fov, f1: WALK_FOV };
+  }, []);
+
+  useEffect(() => {
+    if (!leaving) return;
+    if (reducedMotion) { onLeft(); return; }
+    const to = stageView();
+    const dir = camera.getWorldDirection(new Vector3());
+    const l0 = camera.position.clone().addScaledVector(dir, camera.position.distanceTo(to.l));
+    flight.current = { kind: 'out', t: 0, seconds: OUTRO_S, p0: camera.position.clone(), p1: to.p, l0, l1: to.l, f0: camera.fov, f1: to.fov };
+  }, [leaving]);
+
+  useFrame((_, delta) => {
+    if (!drawn.current) {
+      drawn.current = true;
+      onFirstFrame();
+      if (reducedMotion) onEntered();
+    }
+    const f = flight.current;
+    if (f) {
+      f.t = Math.min(1, f.t + Math.min(delta, 0.1) / f.seconds);
+      const k = smooth(f.t);
+      camera.position.lerpVectors(f.p0, f.p1, k);
+      camera.lookAt(look.lerpVectors(f.l0, f.l1, k));
+      aim(f.f0 + (f.f1 - f.f0) * k);
+      // In: the walls rise while the camera is still high. Out: they sink before it gets there.
+      reveal.current = f.kind === 'in' ? smooth(part(f.t, 0.08, 0.7)) : 1 - smooth(part(f.t, 0.2, 0.85));
+      if (f.t >= 1) {
+        flight.current = null;
+        if (f.kind === 'in') onEntered(); else onLeft();
+      }
+    }
+    const r = reveal.current;
+    if (scene.background instanceof Color) scene.background.lerpColors(colors.stage, colors.room, r);
+    const fog = scene.fog as Fog | null;
+    if (fog) {
+      fog.color.copy(colors.room);
+      fog.near = 200 - 178 * r;
+      fog.far = 300 - 252 * r;
+    }
+  });
+  return null;
+}
+
+/** Grows its children up out of the floor as the room appears. */
+function Reveal({ reveal, children }: { reveal: RefObject<number>; children: ReactNode }) {
+  const ref = useRef<Group>(null);
+  useFrame(() => {
+    const g = ref.current;
+    if (!g) return;
+    g.scale.y = Math.max(0.001, reveal.current);
+    g.visible = reveal.current > 0.002;
+  });
+  return <group ref={ref}>{children}</group>;
+}
+
+/** The lamp over the desk, brightening with the room. */
+function Lamp({ reveal }: { reveal: RefObject<number> }) {
+  const ref = useRef<{ intensity: number }>(null);
+  useFrame(() => { if (ref.current) ref.current.intensity = 6 * reveal.current; });
+  return <pointLight ref={ref as never} position={[0, 3.4, 11]} intensity={0} distance={9} />;
+}
+
 /** You: walks while the pointer is locked, stays inside the room and out of the bucket and the desk, and notices what you can open. */
-function Player({ active, keys, onNear }: { active: RefObject<boolean>; keys: RefObject<Set<string>>; onNear: (near: Target | null) => void }) {
+function Player({ active, free, keys, onNear }: {
+  active: RefObject<boolean>; free: RefObject<boolean>; keys: RefObject<Set<string>>; onNear: (near: Target | null) => void;
+}) {
   const camera = useThree((s) => s.camera);
   const near = useRef<Target | null>(null);
   const step = useRef(0);
   const v = useMemo(() => ({ fwd: new Vector3(), side: new Vector3(), move: new Vector3() }), []);
-  useEffect(() => { camera.lookAt(0, 1.1, 0); }, [camera]);
 
   useFrame((_, delta) => {
+    // On the way in and out the Director holds the camera.
+    if (!free.current) {
+      if (near.current) { near.current = null; onNear(null); }
+      return;
+    }
     const dt = Math.min(delta, 0.1);
     const p = camera.position;
     const k = keys.current;
@@ -270,8 +439,13 @@ function collide(p: Vector3) {
   if (ad < 0.65 && ad > 0) { p.x = AGENT[0] + (ax / ad) * 0.65; p.z = AGENT[2] + (az / ad) * 0.65; }
 }
 
-/** The floor, four walls, and a soft grid so walking reads as moving. */
-function Room({ palette }: { palette: Palette }) {
+/** The floor, four walls, and a soft grid so walking reads as moving. The walls grow and the grid fades in with the room. */
+function Room({ palette, reveal }: { palette: Palette; reveal: RefObject<number> }) {
+  const grid = useRef<{ material: LineBasicMaterial }>(null);
+  useFrame(() => {
+    const m = grid.current?.material;
+    if (m) { m.transparent = true; m.opacity = reveal.current; }
+  });
   const w = ROOM.x1 - ROOM.x0;
   const d = ROOM.z1 - ROOM.z0;
   const cx = (ROOM.x0 + ROOM.x1) / 2;
@@ -288,11 +462,13 @@ function Room({ palette }: { palette: Palette }) {
         <planeGeometry args={[w, d]} />
         <meshStandardMaterial color={palette.stage} />
       </mesh>
-      <gridHelper args={[Math.max(w, d), Math.max(w, d), palette.line, palette.line]} position={[cx, -0.015, cz]} />
-      {wall([cx, ROOM.h / 2, ROOM.z0], 0, w)}
-      {wall([cx, ROOM.h / 2, ROOM.z1], Math.PI, w)}
-      {wall([ROOM.x0, ROOM.h / 2, cz], Math.PI / 2, d)}
-      {wall([ROOM.x1, ROOM.h / 2, cz], -Math.PI / 2, d)}
+      <gridHelper ref={grid as never} args={[Math.max(w, d), Math.max(w, d), palette.line, palette.line]} position={[cx, -0.015, cz]} />
+      <Reveal reveal={reveal}>
+        {wall([cx, ROOM.h / 2, ROOM.z0], 0, w)}
+        {wall([cx, ROOM.h / 2, ROOM.z1], Math.PI, w)}
+        {wall([ROOM.x0, ROOM.h / 2, cz], Math.PI / 2, d)}
+        {wall([ROOM.x1, ROOM.h / 2, cz], -Math.PI / 2, d)}
+      </Reveal>
     </group>
   );
 }
@@ -330,7 +506,7 @@ function Limb({ from, to, r, material }: { from: Vec; to: Vec; r: number; materi
 const HAND_Y = 0.82;
 
 /** The chat agent: seated at the desk, facing its monitor. While a question runs its hands tap the keyboard and its bubble says what it waits on. */
-function ChatAgent({ typing, status, palette }: { typing: boolean; status: string | null; palette: Palette }) {
+function ChatAgent({ typing, status, palette, labels }: { typing: boolean; status: string | null; palette: Palette; labels: boolean }) {
   const left = useRef<Mesh>(null);
   const right = useRef<Mesh>(null);
   const head = useRef<Mesh>(null);
@@ -382,13 +558,15 @@ function ChatAgent({ typing, status, palette }: { typing: boolean; status: strin
         <meshStandardMaterial ref={keyGlow} color={palette.dark ? '#2a2f36' : '#3a3f46'} emissive={palette.accent} emissiveIntensity={0.05} />
       </mesh>
       <Html position={[0, 1.95, 0]} zIndexRange={[40, 20]}>
-        {typing && status && <span className="bubble" title={status}>{status}</span>}
+        {labels && typing && status && <span className="bubble" title={status}>{status}</span>}
       </Html>
       <Html position={[0, 0.0, 0]} zIndexRange={[20, 0]}>
-        <div className={`label3d ${typing ? 'working' : 'idle'}`}>
-          <span className="label strong">Chat agent</span>
-          {typing && <span className="doing working">typing</span>}
-        </div>
+        {labels && (
+          <div className={`label3d ${typing ? 'working' : 'idle'}`}>
+            <span className="label strong">Chat agent</span>
+            {typing && <span className="doing working">typing</span>}
+          </div>
+        )}
       </Html>
     </group>
   );

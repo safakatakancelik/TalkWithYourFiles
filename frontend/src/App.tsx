@@ -9,12 +9,22 @@ import type { NoteActions } from './Panels';
 import { Stage, hasWebGL } from './Stage';
 import type { Huddle } from './Stage';
 import { tell } from './story';
+import { GROW_MS, growFloor, reducedMotion, shrinkFloor, wait } from './transition';
 // Demo-only imports: the "Run demo" button and its controls drive the mock's clock.
 import { clock, resetDemo } from './backend/mock';
 import { DEMO_QUESTION, DEMO_WORKSPACE } from './demo/scenario';
 
 /** The immersive view loads on its own, like the 3D floor. */
 const Immersive = lazy(() => import('./Immersive'));
+
+/**
+ * The way into the immersive view and back. 2d: the app. grow: the 3D floor grows to the whole screen and the panels
+ * slide out. enter: the room takes over from the floor at the same camera angle and flies down to eye level. room:
+ * walking. exit: the room flies back up to the stage's angle. restore: the room fades, the floor is under it. shrink:
+ * the floor goes back into its slot and the panels slide in.
+ */
+type Phase = '2d' | 'grow' | 'enter' | 'room' | 'exit' | 'restore' | 'shrink';
+const RESTORE_MS = 220;
 
 const emptyHuddle: Huddle = { active: false, members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [], verifier: null, busy: {}, now: null, flights: [] };
 /** The backend's default TWYF_MAX_VERIFY_ROUNDS. The events do not carry it. */
@@ -36,7 +46,7 @@ export default function App() {
   const [msgs, setMsgs] = useState<Record<string, ChatMsg[]>>({});
   const [huddle, setHuddle] = useState<Huddle>(emptyHuddle);
   const [mode, setMode] = useState<ChatMode>('half');
-  const [immersive, setImmersive] = useState(false);
+  const [phase, setPhase] = useState<Phase>('2d');
   const [panel, setPanel] = useState<null | 'E' | 'A' | 'S' | 'C'>(null);
   const [cite, setCite] = useState<Citation | null>(null);
   // The file or the agent whose card is open. They are separate things with separate cards.
@@ -313,10 +323,7 @@ export default function App() {
   const cardAgent = card?.kind === 'agent' ? agents.find((a) => a.id === card.id) : undefined;
   const cardFile = card?.kind === 'file' ? files.find((f) => f.id === card.id) : undefined;
 
-  const chat = (
-    <Chat mode={immersive ? 'full' : mode} messages={sid ? msgs[sid] ?? [] : []} busy={running} hasFiles={files.length > 0}
-      onSend={(t) => send(t)} onCite={openCite} />
-  );
+  const chatProps = { messages: sid ? msgs[sid] ?? [] : [], busy: running, hasFiles: files.length > 0, onSend: (t: string) => send(t), onCite: openCite };
   const citation = cite && <CitationPanel citation={cite} file={files.find((f) => f.id === cite.fileId)} foundBy={nameOf(cite.agentId)} onClose={() => setCite(null)} />;
   const demo = (
     <>
@@ -332,22 +339,41 @@ export default function App() {
   );
   const themeButton = <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button>;
 
-  // The immersive view replaces the whole page; the state, the chat and the question stream stay the same.
-  if (immersive) {
-    return (
-      <Suspense fallback={<div className="immersive" />}>
-        <Immersive agents={agents} files={files} huddle={huddle} nameOf={nameOf}
-          litAgent={cite?.agentId ?? null} litFile={cite?.fileId ?? null}
-          onAgent={() => {}} onFile={() => {}} onMore={() => {}}
-          messages={sid ? msgs[sid] ?? [] : []} running={running}
-          chat={chat} citation={citation} onCite={openCite} actions={<>{demo}{themeButton}</>}
-          onExit={() => setImmersive(false)} />
-      </Suspense>
-    );
-  }
+  const enterImmersive = async () => {
+    if (phase !== '2d') return;
+    setCard(null); setPanel(null);
+    const loading = import('./Immersive');
+    // A full-size chat hides the stage: bring the stage back first, so there is a floor to grow from.
+    if (mode === 'full') { setMode('half'); await wait(400); }
+    const grew = !reducedMotion && growFloor() !== null;
+    setPhase('grow');
+    await Promise.all([loading, wait(grew ? GROW_MS : 0)]);
+    setPhase('enter');
+  };
+  const leftRoom = async () => {
+    setPhase('restore');
+    await wait(RESTORE_MS);
+    setPhase('shrink');
+    await shrinkFloor();
+    setPhase('2d');
+  };
+  const inRoom = phase === 'enter' || phase === 'room' || phase === 'exit' || phase === 'restore';
 
+  // The immersive view lies over the app. The app stays mounted under it, so the state, the chat and the question
+  // stream stay the same, and the stage's floor is there to hand the picture back to on the way out.
   return (
-    <div className="app">
+    <div className={`app ${phase !== '2d' && phase !== 'shrink' ? 'is-3d' : ''}`}>
+      {inRoom && (
+        <Suspense fallback={null}>
+          <Immersive agents={agents} files={files} huddle={huddle} nameOf={nameOf}
+            litAgent={cite?.agentId ?? null} litFile={cite?.fileId ?? null}
+            onAgent={() => {}} onFile={() => {}} onMore={() => {}}
+            messages={chatProps.messages} running={running}
+            chat={<Chat mode="full" {...chatProps} />} citation={citation} onCite={openCite} actions={<>{demo}{themeButton}</>}
+            leaving={phase === 'exit'} fading={phase === 'restore'}
+            onEntered={() => setPhase('room')} onExit={() => setPhase('exit')} onLeft={leftRoom} />
+        </Suspense>
+      )}
       <header className="topbar">
         <strong>Talk With Your Files</strong>
         <select value={ws} onChange={(e) => loadWs(e.target.value)} aria-label="Workspace">
@@ -360,7 +386,7 @@ export default function App() {
         </span>
         <span className="grow" />
         {demo}
-        {hasWebGL && <button onClick={() => { setCard(null); setPanel(null); setImmersive(true); }} title="Walk through the stage in first person">Immersive</button>}
+        {hasWebGL && <button onClick={enterImmersive} title="Walk through the stage in first person">Immersive</button>}
         {themeButton}
       </header>
 
@@ -377,14 +403,14 @@ export default function App() {
             litAgent={cite?.agentId ?? cardAgent?.id ?? null} litFile={cite?.fileId ?? cardFile?.id ?? null}
             onAgent={(id) => { setCard({ kind: 'agent', id }); setCite(null); }}
             onFile={(id) => { setCard({ kind: 'file', id }); setCite(null); }}
-            onMore={() => setPanel('A')} onCite={openCite} />
+            onMore={() => setPanel('A')} onCite={openCite} paused={phase === 'enter' || phase === 'room'} />
           <div className="divider">
             <span className="sizer">
               <button onClick={() => resize(-1)} disabled={mode === 'bar'} title="Make the chat smaller" aria-label="Make the chat smaller">↓</button>
               <button onClick={() => resize(1)} disabled={mode === 'full'} title="Make the chat bigger" aria-label="Make the chat bigger">↑</button>
             </span>
           </div>
-          {chat}
+          <Chat mode={mode} {...chatProps} />
 
           {panel === 'E' && <Explorer files={files} notes={notes} onUpload={upload} onFile={(id) => setCard({ kind: 'file', id })} onClose={() => setPanel(null)} />}
           {panel === 'A' && <AgentsPanel agents={agents} notes={notes} onAgent={(id) => setCard({ kind: 'agent', id })} onCreate={createAgent} onClose={() => setPanel(null)} />}

@@ -53,6 +53,8 @@ interface Props {
   onFile: (id: string) => void;
   onMore: () => void;
   onCite: (c: Citation) => void;
+  /** The immersive view covers the stage: the 3D floor stops drawing. */
+  paused?: boolean;
 }
 
 /** Every entry of the huddle log, scrolled to the newest. Shown beside the stage and on the immersive view's log board. */
@@ -74,7 +76,7 @@ export function LogEntries({ log, nameOf, onCite }: { log: LogEntry[]; nameOf: (
   );
 }
 
-export function Stage({ agents, files, notes, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, onCite }: Props) {
+export function Stage({ agents, files, notes, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, onCite, paused }: Props) {
   const [logOpen, setLogOpen] = useState(true);
 
   const { working } = huddle;
@@ -103,14 +105,17 @@ export function Stage({ agents, files, notes, huddle, litAgent, litFile, nameOf,
         </div>
       </aside>
 
-      {hasWebGL ? (
-        <Suspense fallback={<div className="floor" />}>
-          <Floor3D agents={agents} files={files} huddle={huddle} litAgent={litAgent} litFile={litFile}
-            nameOf={nameOf} onAgent={onAgent} onFile={onFile} onMore={onMore} />
-        </Suspense>
-      ) : (
-        <Floor2D agents={agents} files={files} huddle={huddle} litAgent={litAgent} nameOf={nameOf} onAgent={onAgent} onMore={onMore} />
-      )}
+      {/* The slot keeps the floor's place when the floor grows to the whole screen on the way into the immersive view. */}
+      <div className="floor-slot">
+        {hasWebGL ? (
+          <Suspense fallback={<div className="floor" />}>
+            <Floor3D agents={agents} files={files} huddle={huddle} litAgent={litAgent} litFile={litFile}
+              nameOf={nameOf} onAgent={onAgent} onFile={onFile} onMore={onMore} paused={paused} />
+          </Suspense>
+        ) : (
+          <Floor2D agents={agents} files={files} huddle={huddle} litAgent={litAgent} nameOf={nameOf} onAgent={onAgent} onMore={onMore} />
+        )}
+      </div>
 
       {logOpen ? (
         <aside className="log">

@@ -254,7 +254,17 @@ button.label3d:hover, .label3d.lit { background: var(--soft); }
 }
 
 /* The immersive view: the stage as a room, walked through in first person. */
-.immersive { position: fixed; inset: 0; z-index: 50; isolation: isolate; background: var(--bg); overflow: hidden; }
+.immersive { position: fixed; inset: 0; z-index: 50; isolation: isolate; overflow: hidden; opacity: 0; transition: opacity 0.18s ease-out; }
+/* It shows once its first frame is drawn; that frame matches the stage's floor under it, so the swap does not show. */
+.immersive.ready { opacity: 1; }
+.immersive.fading { opacity: 0; transition-duration: 0.22s; }
+.walk-hint {
+  position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; pointer-events: none;
+  display: flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 13px; color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 85%, transparent); border: 1px solid var(--line); border-radius: 999px;
+  animation: fade 0.5s ease-out;
+}
+.walk-hint .sep { opacity: 0.6; }
 .immersive canvas { touch-action: none; }
 .immersive .now3d { z-index: 60; }
 kbd {
@@ -302,4 +312,21 @@ kbd {
 .board3d p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) {
   .use-hint, .screen-view { animation: none; }
+}
+
+/* The way into the immersive view: the panels slide out to their own edges while the 3D floor grows to the screen
+   (transition.ts); the way out slides them back. The floor's slot keeps its place in the layout meanwhile. */
+.floor-slot { flex: 1; min-width: 0; position: relative; display: flex; }
+.topbar, .rail, .shelf, .log, .log-toggle, .chat, .divider, .drawer {
+  transition: transform 0.6s cubic-bezier(0.65, 0, 0.35, 1), opacity 0.45s ease;
+}
+.app.is-3d { pointer-events: none; }
+.app.is-3d .immersive { pointer-events: auto; }
+.app.is-3d .topbar { transform: translateY(-100%); opacity: 0; }
+.app.is-3d .rail, .app.is-3d .shelf, .app.is-3d .drawer.left { transform: translateX(-110%); opacity: 0; }
+.app.is-3d .log, .app.is-3d .log-toggle, .app.is-3d .drawer.right { transform: translateX(110%); opacity: 0; }
+.app.is-3d .chat, .app.is-3d .divider { transform: translateY(100%); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .topbar, .rail, .shelf, .log, .log-toggle, .chat, .divider, .drawer, .immersive { transition: opacity 0.2s ease; }
+  .walk-hint { animation: none; }
 }
