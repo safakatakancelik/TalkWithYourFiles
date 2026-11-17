@@ -33,7 +33,7 @@ A trivial `claude -p` call with Haiku (`Reply with {"ok":true}`) took 5.8 s from
 
 ### Now, with settings only
 
-- **`TWYF_MAX_VERIFY_ROUNDS`** (default 3). With 1, claims that fail are shown under "Could not be verified" in the answer instead of starting another round; saves about 29 s on most questions. Try 1 or 2 and raise it if answers lose too much.
+- **`TWYF_MAX_VERIFY_ROUNDS`** (default 2 since 2026-11-17, was 3: at most one second round). With 1, claims that fail are shown under "Could not be verified" in the answer instead of starting another round; saves about 29 s on most questions. Try 1 or 2 and raise it if answers lose too much.
 - **`--model haiku`** for every turn, to compare speed and answer quality against `sonnet` on the same questions.
 
 ### Fewer steps

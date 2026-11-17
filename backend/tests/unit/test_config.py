@@ -24,7 +24,7 @@ def test_defaults_match_the_table() -> None:
     assert s.cors_origins == ["http://localhost:5173"]
     assert s.runtime == "queue"
     assert s.command == ["claude", "-p", "--output-format", "json"]
-    assert s.max_verify_rounds == 3
+    assert s.max_verify_rounds == 2
     assert s.max_discussion_steps == 6
     assert s.max_turn_retries == 2
     assert s.turn_timeout_s == 300

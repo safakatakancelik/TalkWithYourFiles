@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     runtime: Literal["fake", "queue", "command"] = "queue"
     command: list[str] = ["claude", "-p", "--output-format", "json"]
-    max_verify_rounds: int = 3
+    max_verify_rounds: int = 2
     max_discussion_steps: int = 6
     max_turn_retries: int = 2
     turn_timeout_s: int = 300

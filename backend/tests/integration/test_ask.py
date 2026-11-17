@@ -79,6 +79,7 @@ async def test_ask_nothing_found(env: Env) -> None:
 
 
 async def test_ask_partial_after_round_limit(env: Env) -> None:
+    env.settings.max_verify_rounds = 3  # the script runs three rounds; the default is lower
     t1 = (await env.translators())[0]
     f = await env.upload("lease.txt", LEASE)
     claims = {

@@ -167,7 +167,7 @@ Version 1 runs locally with one command. Three parts of this design assume one l
 | `TWYF_CORS_ORIGINS` | `http://localhost:5173` | Allowed browser origins |
 | `TWYF_RUNTIME` | `queue` | `fake`, `queue` or `command` |
 | `TWYF_COMMAND` | `["claude","-p","--output-format","json"]` | Command for the `command` runtime |
-| `TWYF_MAX_VERIFY_ROUNDS` | `3` | Decision 17 |
+| `TWYF_MAX_VERIFY_ROUNDS` | `2` | Decision 17. Lowered from 3 on 2026-11-17 for speed (`docs/development/speed.md`) |
 | `TWYF_MAX_DISCUSSION_STEPS` | `6` | Orchestrator review steps per round |
 | `TWYF_MAX_TURN_RETRIES` | `2` | Retries of a turn whose output is invalid |
 | `TWYF_TURN_TIMEOUT_S` | `300` | Per turn |

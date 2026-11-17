@@ -18,7 +18,7 @@ const Immersive = lazy(() => import('./Immersive'));
 
 const emptyHuddle: Huddle = { active: false, members: [], working: {}, bubble: null, reading: null, pulse: 0, log: [], verifier: null, busy: {}, now: null, flights: [] };
 /** The backend's default TWYF_MAX_VERIFY_ROUNDS. The events do not carry it. */
-const MAX_ROUNDS = 3;
+const MAX_ROUNDS = 2;
 const MODES: ChatMode[] = ['bar', 'half', 'full'];
 const SPEEDS = [0.5, 1, 2, 4];
 let counter = 0;

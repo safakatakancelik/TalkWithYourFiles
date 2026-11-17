@@ -103,6 +103,7 @@ async def test_fail_then_pass_with_carried_verdict(harness: Any, conn: sqlite3.C
 
 async def test_three_failures_give_a_partial_answer(harness: Any) -> None:
     h: Harness = harness
+    h.settings.max_verify_rounds = 3  # the script runs three rounds; the default is lower
     f = h.upload("prices.txt", PRICES)
     failing = [
         step(
