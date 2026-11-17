@@ -26,6 +26,8 @@ export function growFloor(): DOMRect | null {
   if (!el || !r || r.width === 0 || r.height === 0) return null;
   el.style.position = 'fixed';
   el.style.zIndex = '45';
+  // The stage's colour behind it, as in its slot, so the room (which starts on that colour) matches it.
+  el.style.background = 'var(--stage)';
   el.style.transition = 'none';
   place(el, r);
   el.getBoundingClientRect(); // starts the transition from the slot

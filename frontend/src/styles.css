@@ -254,7 +254,7 @@ button.label3d:hover, .label3d.lit { background: var(--soft); }
 }
 
 /* The immersive view: the stage as a room, walked through in first person. */
-.immersive { position: fixed; inset: 0; z-index: 50; isolation: isolate; overflow: hidden; opacity: 0; transition: opacity 0.18s ease-out; }
+.immersive { position: fixed; inset: 0; z-index: 50; isolation: isolate; overflow: hidden; opacity: 0; transition: opacity 0.3s ease-in-out; }
 /* It shows once its first frame is drawn; that frame matches the stage's floor under it, so the swap does not show. */
 .immersive.ready { opacity: 1; }
 .immersive.fading { opacity: 0; transition-duration: 0.22s; }
@@ -330,3 +330,6 @@ kbd {
   .topbar, .rail, .shelf, .log, .log-toggle, .chat, .divider, .drawer, .immersive { transition: opacity 0.2s ease; }
   .walk-hint { animation: none; }
 }
+/* Labels in the room that come and go with the way in and out fade instead of popping. */
+.label3d.fades, .bubble.fades { transition: opacity 0.5s ease; }
+.label3d.fades.hidden, .bubble.fades.hidden { opacity: 0; }

@@ -359,7 +359,8 @@ export default function App() {
     await shrinkFloor();
     setPhase('2d');
   };
-  const inRoom = phase === 'enter' || phase === 'room' || phase === 'exit' || phase === 'restore';
+  // Mounted from the start of the grow: drawn once unseen, so it is ready the moment the floor fills the screen.
+  const inRoom = phase !== '2d' && phase !== 'shrink';
 
   // The immersive view lies over the app. The app stays mounted under it, so the state, the chat and the question
   // stream stay the same, and the stage's floor is there to hand the picture back to on the way out.
@@ -372,7 +373,7 @@ export default function App() {
             onAgent={() => {}} onFile={() => {}} onMore={() => {}}
             messages={chatProps.messages} running={running}
             chat={<Chat mode="full" {...chatProps} />} citation={citation} onCite={openCite} actions={<>{demo}{themeButton}</>}
-            leaving={phase === 'exit'} fading={phase === 'restore'}
+            holding={phase === 'grow'} leaving={phase === 'exit'} fading={phase === 'restore'}
             onEntered={() => setPhase('room')} onExit={() => setPhase('exit')} onLeft={leftRoom} />
         </Suspense>
       )}

@@ -50,6 +50,18 @@ const VERIFIER_WAITS = at(4.2, 45);
 export const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 /** Fraction of the way to move towards a target this frame. Reduced motion snaps. */
 export const ease = (dt: number, speed = 4) => (reducedMotion ? 1 : 1 - Math.exp(-speed * dt));
+/**
+ * Easing that goes all the way on a component's first frame. A scene drawn mid-question (the immersive view taking
+ * over from the stage) then starts as the stage shows it, instead of fading and flying everything in again.
+ */
+function useSettle() {
+  const first = useRef(true);
+  return (dt: number) => {
+    const now = first.current;
+    first.current = false;
+    return (speed?: number) => (now ? 1 : ease(dt, speed));
+  };
+}
 
 /** The theme's colours, read from the CSS variables and re-read when the theme changes. */
 export function usePalette() {
@@ -127,6 +139,11 @@ export default function Floor3D(props: FloorProps) {
 /** The huddle floor. On its own it brings its lights and orbit camera; the immersive room brings its own. */
 export function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgent, onFile, onMore, palette, standalone = true }: FloorProps & { palette: Palette; standalone?: boolean }) {
   const { active, members, working, busy } = huddle;
+  // What was already on its way when this scene appeared is not played again.
+  const bornFlights = useRef(new Set(huddle.flights));
+  const firstPulse = useRef(huddle.pulse);
+  const pulsed = useRef(false);
+  if (huddle.pulse !== firstPulse.current) pulsed.current = true;
   // Working: its turn is running. Waiting: in the huddle while others work. Idle: no part in the question now.
   const mode = (id: string, inHuddle: boolean): Mode => (busy[id] ? 'working' : active && inHuddle ? 'waiting' : 'idle');
   const idle = agents.filter((a) => !members.includes(a.id));
@@ -199,7 +216,7 @@ export function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgen
         bubble={huddle.bubble?.agentId === ORCHESTRATOR ? huddle.bubble.text : null}>
         <span className="label strong">Orchestrator</span>
       </Figure>
-      {huddle.pulse > 0 && <Pulse key={huddle.pulse} from={orchestrator} color={palette.accent} />}
+      {huddle.pulse > 0 && pulsed.current && <Pulse key={huddle.pulse} from={orchestrator} color={palette.accent} />}
 
       <Figure role="verifier" target={verifier} palette={palette} title="Verifier" mode={mode(VERIFIER, !!huddle.verifier)} doing={busy[VERIFIER]}>
         <span className="label strong">
@@ -210,7 +227,7 @@ export function Scene({ agents, files, huddle, litAgent, litFile, nameOf, onAgen
         </span>
       </Figure>
 
-      {huddle.flights.map((f) => {
+      {huddle.flights.filter((f) => !bornFlights.current.has(f)).map((f) => {
         const from = where(f.from);
         const to = where(f.to);
         return from && to ? <Flight key={f.id} from={from} to={to} color={palette.accent} /> : null;
@@ -256,11 +273,13 @@ function FileCard({ file, rest, hand, lit, reading, palette, onClick }: {
     const p = new Vector3(...hand).multiplyScalar((RING_IN - 0.55) / RING_IN).setY(1.0);
     return { pos: p, rot: new Quaternion() };
   }, [hand, rest, lit]);
+  const settle = useSettle();
   useFrame(({ clock }, dt) => {
     const m = ref.current;
     if (!m) return;
-    m.position.lerp(goal.pos, ease(dt, 3));
-    m.quaternion.slerp(goal.rot, ease(dt, 3));
+    const k = settle(dt);
+    m.position.lerp(goal.pos, k(3));
+    m.quaternion.slerp(goal.rot, k(3));
     const mat = m.material as unknown as { emissiveIntensity: number };
     mat.emissiveIntensity = reading ? 0.45 + 0.35 * Math.sin(clock.elapsedTime * 5) : lit || hover ? 0.5 : 0;
   });
@@ -315,11 +334,13 @@ function Figure({ role, target, mode = 'idle', doing, lit, faded, palette, title
   useEffect(() => () => material.dispose(), [material]);
   const working = mode === 'working';
   const { shown, leaving } = useLinger(bubble);
+  const settle = useSettle();
 
   useFrame(({ clock }, dt) => {
     const g = ref.current;
     const b = body.current;
     if (!g || !b) return;
+    const k = settle(dt);
     const t = clock.elapsedTime + phase;
     const away = g.position.distanceTo(goal);
     g.position.lerp(goal, ease(dt, 2.5));
@@ -330,13 +351,13 @@ function Figure({ role, target, mode = 'idle', doing, lit, faded, palette, title
       b.position.y = stepping + (working ? 0.05 + Math.sin(t * 5) * 0.05 : 0);
       b.scale.y = 1 + Math.sin(t * 1.7) * 0.015;
     }
-    material.opacity += ((mode === 'waiting' ? 0.4 : faded ? 0.5 : 1) - material.opacity) * ease(dt, 4);
+    material.opacity += ((mode === 'waiting' ? 0.4 : faded ? 0.5 : 1) - material.opacity) * k(4);
     const glow = lit ? 0.6 : working ? 0.22 + 0.12 * Math.sin(t * 4) : 0;
-    material.emissiveIntensity += (glow - material.emissiveIntensity) * ease(dt, 5);
+    material.emissiveIntensity += (glow - material.emissiveIntensity) * k(5);
     if (ring.current) ring.current.scale.setScalar(working && !reducedMotion ? 1.1 + 0.15 * Math.sin(t * 4) : 1);
     if (dots.current) {
       const d = dots.current;
-      const size = d.scale.x + ((working ? 1 : 0) - d.scale.x) * ease(dt, 5);
+      const size = d.scale.x + ((working ? 1 : 0) - d.scale.x) * k(5);
       d.scale.setScalar(size);
       d.visible = size > 0.02;
       if (!reducedMotion) d.rotation.y += dt * 3;
@@ -407,11 +428,12 @@ function Figure({ role, target, mode = 'idle', doing, lit, faded, palette, title
 /** The ring the huddle stands on. It fades in when a question starts and out when the huddle ends. */
 function HuddleRing({ active, color }: { active: boolean; color: string }) {
   const ref = useRef<Mesh>(null);
+  const settle = useSettle();
   useFrame((_, dt) => {
     const m = ref.current;
     if (!m) return;
     const mat = m.material as MeshBasicMaterial;
-    mat.opacity += ((active ? 0.7 : 0) - mat.opacity) * ease(dt, 3);
+    mat.opacity += ((active ? 0.7 : 0) - mat.opacity) * settle(dt)(3);
     m.visible = mat.opacity > 0.01;
   });
   return (

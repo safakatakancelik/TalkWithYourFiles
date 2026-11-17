@@ -80,11 +80,13 @@ interface Props extends FloorProps {
   leaving: boolean;
   /** Fade out: the stage's floor is under the room again. */
   fading: boolean;
+  /** Drawn but not shown yet, while the stage's floor grows: the room waits at the floor's angle. */
+  holding: boolean;
   onEntered: () => void;
   onLeft: () => void;
 }
 
-export default function Immersive({ messages, running, chat, citation, onCite, actions, onExit, leaving, fading, onEntered, onLeft, ...floor }: Props) {
+export default function Immersive({ messages, running, chat, citation, onCite, actions, onExit, leaving, fading, holding, onEntered, onLeft, ...floor }: Props) {
   const palette = usePalette();
   const [locked, setLocked] = useState(false);
   const [near, setNear] = useState<Target | null>(null);
@@ -93,7 +95,7 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
   const [menu, setMenu] = useState(false);
   /** The way in is over and the way out has not started: you can walk. */
   const [free, setFree] = useState(false);
-  /** The first frame is drawn: the room fades in over the stage. */
+  /** The handover has begun: the room fades in over the stage's floor, showing the same picture. */
   const [ready, setReady] = useState(false);
   const freeRef = useRef(false);
   const reveal = useRef(0);
@@ -171,7 +173,7 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
   }, []);
   const entered = useCallback(() => { setFree(true); onEntered(); }, [onEntered]);
   const left = useCallback(() => onLeft(), [onLeft]);
-  const firstFrame = useCallback(() => setReady(true), []);
+  const shown = useCallback(() => setReady(true), []);
   /** Standing in the room: a click on the room starts walking. */
   const clickRoom = (e: React.MouseEvent) => {
     if (free && !leaving && !locked && !screen && !menu && e.target === canvas.current) lock();
@@ -184,7 +186,7 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
 
   return (
     <div className={`immersive ${ready ? 'ready' : ''} ${fading ? 'fading' : ''}`} onClick={clickRoom}>
-      <Canvas camera={{ fov: WALK_FOV, near: 0.05, far: 120, position: SPAWN }} dpr={[1, 2]}
+      <Canvas camera={{ fov: WALK_FOV, near: 0.05, far: 120, position: SPAWN }} dpr={[1, 2]} frameloop={holding ? 'demand' : 'always'}
         onCreated={({ gl }) => { canvas.current = gl.domElement; }}>
         <color attach="background" args={[palette.stage]} />
         <fog attach="fog" args={[palette.bg, 200, 300]} />
@@ -194,13 +196,13 @@ export default function Immersive({ messages, running, chat, citation, onCite, a
         <Lamp reveal={reveal} />
         {/* Never locks by itself: only a click on the room, "Walk in" and the monitor's back button do. */}
         <PointerLockControls selector="#immersive-no-auto-lock" onLock={onLock} onUnlock={onUnlock} />
-        <Director reveal={reveal} leaving={leaving} palette={palette} onFirstFrame={firstFrame} onEntered={entered} onLeft={left} />
+        <Director reveal={reveal} holding={holding} leaving={leaving} palette={palette} onShown={shown} onEntered={entered} onLeft={left} />
         <Player active={lockedRef} free={freeRef} keys={keys} onNear={onNear} />
         <Room palette={palette} reveal={reveal} />
         <group scale={HUDDLE_SCALE}>
           <Scene {...floor} standalone={false} palette={palette} onAgent={noop} onFile={noop} onMore={noop} />
         </group>
-        <Reveal reveal={reveal}>
+        <Reveal reveal={reveal} from={0.3}>
           <Desk palette={palette} />
           <ChatAgent typing={running} status={status} palette={palette} labels={free && !leaving} />
           <Monitor messages={messages} near={near === 'chat'} palette={palette} onUse={() => { if (nearRef.current === 'chat') openScreen('chat'); }} />
@@ -269,13 +271,14 @@ interface Flight { kind: 'in' | 'out'; t: number; seconds: number; p0: Vector3; 
  * Moves the camera on the way in and out, and sets `reveal`: 0 is the stage's floor alone, 1 the whole room. Walls,
  * furniture and the lamp grow with it, and the background and the fog turn from the stage's into the room's.
  */
-function Director({ reveal, leaving, palette, onFirstFrame, onEntered, onLeft }: {
-  reveal: RefObject<number>; leaving: boolean; palette: Palette; onFirstFrame: () => void; onEntered: () => void; onLeft: () => void;
+function Director({ reveal, holding, leaving, palette, onShown, onEntered, onLeft }: {
+  reveal: RefObject<number>; holding: boolean; leaving: boolean; palette: Palette;
+  onShown: () => void; onEntered: () => void; onLeft: () => void;
 }) {
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
   const scene = useThree((s) => s.scene);
   const flight = useRef<Flight | null>(null);
-  const drawn = useRef(false);
+  const started = useRef(false);
   const look = useMemo(() => new Vector3(), []);
   const colors = useMemo(() => ({ stage: new Color(), room: new Color() }), []);
   useEffect(() => { colors.stage.set(palette.stage); colors.room.set(palette.bg); }, [colors, palette.stage, palette.bg]);
@@ -286,21 +289,17 @@ function Director({ reveal, leaving, palette, onFirstFrame, onEntered, onLeft }:
   });
   const aim = (fov: number) => { camera.fov = fov; camera.updateProjectionMatrix(); };
 
-  useLayoutEffect(() => {
-    if (reducedMotion) {
-      camera.position.set(...SPAWN);
-      camera.lookAt(...LOOK);
-      reveal.current = 1;
-      return;
-    }
-    // The first frame shows what the stage's floor shows: same angle, same size, no walls yet.
+  /** Shows what the stage's floor shows: same angle, same size, no walls yet. */
+  const toStage = () => {
     const from = stageView();
     camera.position.copy(from.p);
     camera.lookAt(from.l);
     aim(from.fov);
     reveal.current = 0;
-    flight.current = { kind: 'in', t: 0, seconds: INTRO_S, p0: from.p, p1: new Vector3(...SPAWN), l0: from.l, l1: new Vector3(...LOOK), f0: from.fov, f1: WALK_FOV };
-  }, []);
+    return from;
+  };
+  // While the floor grows the room is drawn once, unseen, so its first real frame does not stall the handover.
+  useLayoutEffect(() => { if (reducedMotion) { camera.position.set(...SPAWN); camera.lookAt(...LOOK); reveal.current = 1; } else toStage(); }, []);
 
   useEffect(() => {
     if (!leaving) return;
@@ -312,10 +311,16 @@ function Director({ reveal, leaving, palette, onFirstFrame, onEntered, onLeft }:
   }, [leaving]);
 
   useFrame((_, delta) => {
-    if (!drawn.current) {
-      drawn.current = true;
-      onFirstFrame();
+    if (!holding && !started.current) {
+      // The floor has finished growing: take over from it where its camera is now, and start down.
+      started.current = true;
+      if (!reducedMotion) {
+        const from = toStage();
+        flight.current = { kind: 'in', t: 0, seconds: INTRO_S, p0: from.p, p1: new Vector3(...SPAWN), l0: from.l, l1: new Vector3(...LOOK), f0: from.fov, f1: WALK_FOV };
+      }
+      onShown();
       if (reducedMotion) onEntered();
+      delta = 0; // the first frame shows the stage's picture as it is
     }
     const f = flight.current;
     if (f) {
@@ -336,21 +341,26 @@ function Director({ reveal, leaving, palette, onFirstFrame, onEntered, onLeft }:
     const fog = scene.fog as Fog | null;
     if (fog) {
       fog.color.copy(colors.room);
-      fog.near = 200 - 178 * r;
-      fog.far = 300 - 252 * r;
+      // Far enough at 0 to touch nothing in view, so the haze builds with the room instead of arriving at the end.
+      fog.near = 60 - 38 * r;
+      fog.far = 120 - 72 * r;
     }
   });
   return null;
 }
 
-/** Grows its children up out of the floor as the room appears. */
-function Reveal({ reveal, children }: { reveal: RefObject<number>; children: ReactNode }) {
+/** Its share of the room's reveal: 0 before `from`, 1 after `to`, eased between. Walls come first, furniture after. */
+const within = (r: number, from: number, to: number) => smooth(part(r, from, to));
+
+/** Grows its children up out of the floor as the room appears, between `from` and `to` of the reveal. */
+function Reveal({ reveal, from = 0, to = 1, children }: { reveal: RefObject<number>; from?: number; to?: number; children: ReactNode }) {
   const ref = useRef<Group>(null);
   useFrame(() => {
     const g = ref.current;
     if (!g) return;
-    g.scale.y = Math.max(0.001, reveal.current);
-    g.visible = reveal.current > 0.002;
+    const r = within(reveal.current, from, to);
+    g.scale.y = Math.max(0.001, r);
+    g.visible = r > 0.002;
   });
   return <group ref={ref}>{children}</group>;
 }
@@ -442,28 +452,36 @@ function collide(p: Vector3) {
 /** The floor, four walls, and a soft grid so walking reads as moving. The walls grow and the grid fades in with the room. */
 function Room({ palette, reveal }: { palette: Palette; reveal: RefObject<number> }) {
   const grid = useRef<{ material: LineBasicMaterial }>(null);
+  // The floor fades in too: lit, it is a shade darker than the stage's flat background it starts over.
+  const floor = useMemo(() => new MeshStandardMaterial({ transparent: true, opacity: 0, depthWrite: false }), []);
+  const walls = useMemo(() => new MeshStandardMaterial({ transparent: true, opacity: 0 }), []);
+  useEffect(() => { floor.color.set(palette.stage); walls.color.set(palette.surface); }, [floor, walls, palette.stage, palette.surface]);
+  useEffect(() => () => { floor.dispose(); walls.dispose(); }, [floor, walls]);
   useFrame(() => {
+    const r = reveal.current;
     const m = grid.current?.material;
-    if (m) { m.transparent = true; m.opacity = reveal.current; }
+    if (m) { m.transparent = true; m.opacity = r; }
+    floor.opacity = r;
+    walls.opacity = within(r, 0, 0.6);
+    walls.transparent = walls.opacity < 1;
+    walls.depthWrite = !walls.transparent;
   });
   const w = ROOM.x1 - ROOM.x0;
   const d = ROOM.z1 - ROOM.z0;
   const cx = (ROOM.x0 + ROOM.x1) / 2;
   const cz = (ROOM.z0 + ROOM.z1) / 2;
   const wall = (pos: Vec, rotY: number, width: number) => (
-    <mesh position={pos} rotation-y={rotY}>
+    <mesh position={pos} rotation-y={rotY} material={walls}>
       <planeGeometry args={[width, ROOM.h]} />
-      <meshStandardMaterial color={palette.surface} />
     </mesh>
   );
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} position={[cx, -0.02, cz]}>
+      <mesh rotation-x={-Math.PI / 2} position={[cx, -0.02, cz]} material={floor} renderOrder={-1}>
         <planeGeometry args={[w, d]} />
-        <meshStandardMaterial color={palette.stage} />
       </mesh>
       <gridHelper ref={grid as never} args={[Math.max(w, d), Math.max(w, d), palette.line, palette.line]} position={[cx, -0.015, cz]} />
-      <Reveal reveal={reveal}>
+      <Reveal reveal={reveal} to={0.6}>
         {wall([cx, ROOM.h / 2, ROOM.z0], 0, w)}
         {wall([cx, ROOM.h / 2, ROOM.z1], Math.PI, w)}
         {wall([ROOM.x0, ROOM.h / 2, cz], Math.PI / 2, d)}
@@ -558,15 +576,14 @@ function ChatAgent({ typing, status, palette, labels }: { typing: boolean; statu
         <meshStandardMaterial ref={keyGlow} color={palette.dark ? '#2a2f36' : '#3a3f46'} emissive={palette.accent} emissiveIntensity={0.05} />
       </mesh>
       <Html position={[0, 1.95, 0]} zIndexRange={[40, 20]}>
-        {labels && typing && status && <span className="bubble" title={status}>{status}</span>}
+        {typing && status && <span className={`bubble fades ${labels ? '' : 'hidden'}`} title={status}>{status}</span>}
       </Html>
       <Html position={[0, 0.0, 0]} zIndexRange={[20, 0]}>
-        {labels && (
-          <div className={`label3d ${typing ? 'working' : 'idle'}`}>
-            <span className="label strong">Chat agent</span>
-            {typing && <span className="doing working">typing</span>}
-          </div>
-        )}
+        {/* Faded, not removed, on the way in and out: they would pop otherwise. */}
+        <div className={`label3d fades ${typing ? 'working' : 'idle'} ${labels ? '' : 'hidden'}`}>
+          <span className="label strong">Chat agent</span>
+          {typing && <span className="doing working">typing</span>}
+        </div>
       </Html>
     </group>
   );
