@@ -35,4 +35,4 @@ def test_render_prompt(ws: Workspace, ctx: RequestContext, conn: sqlite3.Connect
     generic = agents_repo.list(conn, ws.id, "translator")[0]
     g_definition = current_version(conn, generic.definition_id)
     system, _ = render(generic, g_definition, "volunteer", {s.slug: s for s in g_definition.skills}, rules=rules)
-    assert system.endswith("Your name is Translator 1.")
+    assert system.endswith("Your name is Translator.")

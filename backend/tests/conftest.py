@@ -154,11 +154,33 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest.fixture
-def harness(
+def two_translators(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Workspaces made in this test start with two translators, so the full huddle runs (a default one has one)."""
+    from twyf.services import workspaces
+
+    monkeypatch.setattr(
+        workspaces, "BUILTIN_AGENTS",
+        [*workspaces.BUILTIN_AGENTS[:-1], ("translator", "Translator 1", "generic"), ("translator", "Translator 2", "generic")],
+    )  # fmt: skip
+
+
+@pytest.fixture
+def solo_harness(
     ws: Workspace, ctx: RequestContext, conn: sqlite3.Connection, settings: Settings, fake: FakeRuntime,
     retriever: HybridRetriever,
 ) -> Any:  # fmt: skip
-    """A Harness (tests/unit/orchestration/harness.py), which imports from this module."""
+    """A Harness (tests/unit/orchestration/harness.py) over a default workspace: one translator, named Translator."""
+    from tests.unit.orchestration.harness import Harness
+
+    return Harness(ws, ctx, conn, settings, fake, retriever)
+
+
+@pytest.fixture
+def harness(
+    two_translators: None, ws: Workspace, ctx: RequestContext, conn: sqlite3.Connection, settings: Settings,
+    fake: FakeRuntime, retriever: HybridRetriever,
+) -> Any:  # fmt: skip
+    """A Harness over a workspace with two translators, so the huddle runs in full."""
     from tests.unit.orchestration.harness import Harness
 
     return Harness(ws, ctx, conn, settings, fake, retriever)

@@ -54,9 +54,7 @@ async def test_runner_records_turn(
     assert json.loads(row["output"]) == GOOD
     assert (row["model"], row["input_tokens"], row["output_tokens"]) == ("m-1", 10, 3)
     [request] = fake.requests
-    assert (
-        request.input["broadcastText"] == "Who reads leases?" and "Your name is Translator 1." in request.system_prompt
-    )
+    assert request.input["broadcastText"] == "Who reads leases?" and "Your name is Translator." in request.system_prompt
     assert request.output_schema["properties"]["volunteer"]["type"] == "boolean"
     queued, completed = events("turn.queued"), events("turn.completed")
     assert len(queued) == 1 and len(completed) == 1

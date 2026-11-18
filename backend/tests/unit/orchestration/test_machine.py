@@ -37,6 +37,7 @@ from twyf.orchestration.machine import (
     RunDraftClaims,
     RunPlan,
     RunReview,
+    RunSoloAssign,
     RunVerify,
     RunVolunteers,
     RunWork,
@@ -61,6 +62,8 @@ IN = frozenset({"a_1"})
 ROWS = [
     ("no ready files", QState("received"), Start(0), QState("writing"), [RunWriteAnswer("no_files")]),
     ("start", QState("received"), Start(2), QState("planning", round_no=1), [StartRound(1, "initial"), RunPlan()]),
+    ("start, one translator", QState("received"), Start(2, solo=True), QState("assigning", round_no=1, solo=True),
+     [StartRound(1, "initial"), RunSoloAssign()]),
     ("plan, someone to ask", QState("planning", 1), PlanDone(("a_1",), (CALL,)), QState("broadcasting", 1),
      [EmitBroadcast(("a_1",)), RunVolunteers(("a_1",))]),
     ("plan, nobody to ask", QState("planning", 1), PlanDone((), (CALL,)), QState("assigning", 1), [RunAssign((), (CALL,))]),
@@ -167,3 +170,10 @@ def test_machine_is_pure() -> None:
     imported += [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names]
     assert not [m for m in imported if m.startswith("twyf")]
     assert set(imported) <= {"dataclasses"}
+
+
+def test_machine_solo_skips_review_after_work() -> None:
+    solo = QState("working", 1, members=IN, solo=True)
+    assert transition(solo, WorkDone()) == (QState("drafting", 1, members=IN, solo=True), [RunDraftClaims()])
+    huddle = QState("working", 1, members=IN)
+    assert transition(huddle, WorkDone()) == (QState("reviewing", 1, members=IN), [RunReview(())])

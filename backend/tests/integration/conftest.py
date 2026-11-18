@@ -10,6 +10,11 @@ from twyf.http.app import build_app
 from twyf.runtime.fake import FakeRuntime
 
 
+@pytest.fixture(autouse=True)
+def _huddle(two_translators: None) -> None:
+    """These tests script the full huddle, so their workspaces start with two translators."""
+
+
 @pytest.fixture
 def env(client: httpx.AsyncClient, fake: FakeRuntime, settings: Settings) -> Env:
     return Env(client, fake, settings)

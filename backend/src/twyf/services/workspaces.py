@@ -22,8 +22,7 @@ BUILTIN_AGENTS = [
     ("orchestrator", "Orchestrator", ""),
     ("verifier", "Verifier", ""),
     ("chat", "Chat", ""),
-    ("translator", "Translator 1", "generic"),
-    ("translator", "Translator 2", "generic"),
+    ("translator", "Translator", "generic"),
 ]
 
 

@@ -23,13 +23,13 @@ def test_create_makes_builtin_agents(ws: Workspace, conn: sqlite3.Connection, ev
     ).fetchall()
     assert sorted(tuple(k) for k in kinds) == [
         ("chat", "Chat", ""), ("orchestrator", "Orchestrator", ""),
-        ("translator", "Translator 1", "generic"), ("translator", "Translator 2", "generic"),
+        ("translator", "Translator", "generic"),
         ("verifier", "Verifier", ""),
     ]  # fmt: skip
     [created] = events("workspace.created")
     assert (created.actor_id, created.source, created.entity_id) == ("u_local", "api", ws.id)
     agent_events = events("agent.created")
-    assert len(agent_events) == 5
+    assert len(agent_events) == 4
     assert all(
         e.actor_id == "system" and e.source == "internal" and e.cause_event_id == created.id for e in agent_events
     )

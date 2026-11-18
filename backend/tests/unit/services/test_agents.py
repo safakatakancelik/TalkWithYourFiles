@@ -18,7 +18,7 @@ def _slug(conn: sqlite3.Connection, agent_id: str) -> str:
 
 def test_list_is_translators_only(ws: Workspace, ctx: RequestContext) -> None:
     listed = agents.list(ctx, ListAgentsInput(ws=ws.id))
-    assert [(a.name, a.specialty) for a in listed] == [("Translator 1", "generic"), ("Translator 2", "generic")]
+    assert [(a.name, a.specialty) for a in listed] == [("Translator", "generic")]
 
 
 def test_create_resolves_definition(ws: Workspace, ctx: RequestContext, conn: sqlite3.Connection) -> None:
@@ -34,7 +34,7 @@ def test_rename_and_delete(ws: Workspace, ctx: RequestContext, conn: sqlite3.Con
     first = agents.list(ctx, ListAgentsInput(ws=ws.id))[0]
     renamed = agents.rename(ctx, RenameAgentInput(ws=ws.id, agent_id=first.id, name="Reader"))
     assert renamed.name == "Reader"
-    assert events("agent.renamed")[0].payload == {"old": "Translator 1", "new": "Reader"}
+    assert events("agent.renamed")[0].payload == {"old": "Translator", "new": "Reader"}
     agents.delete(ctx, DeleteAgentInput(ws=ws.id, agent_id=first.id))
     assert first.id not in [a.id for a in agents.list(ctx, ListAgentsInput(ws=ws.id))]
     assert conn.execute("SELECT deleted_at FROM agents WHERE id = ?", (first.id,)).fetchone()[0] is not None
