@@ -1,68 +1,19 @@
 # How Talk With Your Files works
 
-How the parts connect, what happens when a file is added or a question is asked, and which parts run in each way of using the app. The full design is in [development/revision-2-backend/](development/revision-2-backend/); this is the overview.
+How the parts connect, what happens when a file is added or a question is asked, and which parts run in each way of using the app. The full design is in [development/revision-2-backend/](development/revision-2-backend/); this is the overview. All system diagrams are centralized in [docs/diagrams/](diagrams/README.md).
 
 ## The parts
 
-```mermaid
-flowchart LR
-    subgraph Clients
-        UI["Chat UI<br/>(React, frontend/)"]
-        Harness["AI harness<br/>(Claude Code, Codex, ...)"]
-        Script["Scripts, curl,<br/>/docs page"]
-    end
-
-    subgraph Backend["Backend (backend/src/twyf)"]
-        MCP["MCP server<br/>twyf mcp"]
-        HTTP["HTTP API + event streams<br/>twyf serve"]
-        Ops["Operation list<br/>contract/operations.py"]
-        Services["Services<br/>(the rules)"]
-        Engine["Orchestration engine<br/>+ state machine"]
-        Runner["Turn runner<br/>validate, check quotes, retry"]
-        Ingest["Ingestion<br/>parse, chunk, index, embed"]
-        Retrieval["Retrieval<br/>keyword + vector, fused"]
-        Recorder["Recorder<br/>event log + broker"]
-    end
-
-    subgraph Storage["~/.twyf"]
-        DB[("SQLite<br/>tables, FTS5, sqlite-vec,<br/>history, app_events")]
-        Files[("files/<br/>original uploads")]
-    end
-
-    subgraph Models["Where the thinking happens"]
-        Command["command runtime<br/>claude -p per turn"]
-        Queue["queue runtime<br/>a harness claims turns"]
-        Fake["fake runtime<br/>scripted, for tests"]
-    end
-
-    Agents[".agents/<br/>agent and skill texts"]
-
-    UI -- "HTTP + SSE" --> HTTP
-    Script -- HTTP --> HTTP
-    Harness -- "MCP tools" --> MCP
-    MCP -- HTTP --> HTTP
-    HTTP --> Ops --> Services
-    Services --> Ingest
-    Services --> Engine
-    Engine --> Runner
-    Engine --> Retrieval
-    Runner --> Command
-    Runner --> Queue
-    Runner --> Fake
-    Queue -. "claim_turn / submit_turn" .- MCP
-    Agents --> Runner
-    Ingest --> DB
-    Ingest --> Files
-    Retrieval --> DB
-    Services --> DB
-    Services --> Recorder --> DB
-    Recorder -- "after commit" --> HTTP
-```
+The parts and their connections ([See System Components & Architecture Diagram](diagrams/README.md#2-system-components--architecture)).
 
 - **One list of operations** (`contract/operations.py`, 32 of them) generates both the HTTP routes and the MCP tools, so both doors always offer the same things with the same rules.
 - **Services** hold every rule. The HTTP and MCP layers only translate.
 - **The backend never calls a model itself.** Each piece of agent work is a *turn* with a typed input and output, handed to a runtime. The turn runner validates every output against its schema, checks every quote against the file text, and retries a bad output (up to `TWYF_MAX_TURN_RETRIES`).
 - **Everything that changes something is recorded** in `app_events`, and published to the UI's event stream after the database commit. Reads are not recorded.
+
+## End-to-end pipeline: Ingestion, Hybrid Retrieval and Verification
+
+The complete flow from document storage to hybrid retrieval and verified response is detailed in [**See End-to-End Pipeline Diagram**](diagrams/README.md#1-end-to-end-pipeline).
 
 ## The agents
 
@@ -77,20 +28,7 @@ Their instructions are the texts in `.agents/`. Every agent follows `.agents/age
 
 ## Adding a file
 
-```mermaid
-flowchart LR
-    Up["upload_file"] --> Store["Store the original<br/>(sha256, version)"]
-    Store --> Parse["Parse<br/>Docling if installed, else basic"]
-    Parse --> Chunk["Chunk into passages"]
-    Chunk --> FTS["Keyword index<br/>(SQLite FTS5)"]
-    Chunk --> Emb{"fastembed<br/>installed?"}
-    Emb -- yes --> Vec["Vectors<br/>(sqlite-vec)"]
-    Emb -- no --> Skip["No vectors:<br/>keyword search only"]
-    FTS --> Text{"any text?"}
-    Vec --> Text
-    Text -- yes --> FR["first_read turn:<br/>a translator takes the file<br/>and writes first notes"]
-    Text -- no --> Unr["unreadable:<br/>hidden from the agents,<br/>named in every answer"]
-```
+How an uploaded file is ingested, chunked, and indexed ([See File Ingestion Flow Diagram](diagrams/README.md#4-file-ingestion-flow)).
 
 - **Parsers.** Without the `rich` extra: `pypdf` for PDF (the text layer only), `python-docx` for Word, plain text, CSV. With it, Docling reads layout, tables, and scanned pages and images by OCR. A PDF with no text layer, such as a scan or an exported design, gives 0 characters with the basic parser.
 - **Files with no text.** A file whose parse gives no text is `unreadable`: the agents never see it, and every answer ends with a line naming the files that were not read. At each start, such a file is parsed again if the parser now chosen has not tried it, for example after the rich extra is installed.
@@ -113,69 +51,11 @@ The default model, `BAAI/bge-small-en-v1.5`, is made for English. Text in other 
 
 ## Asking a question
 
-The question's states, from the state machine in `orchestration/machine.py`:
+The question's states, from the state machine in `orchestration/machine.py` ([See Question State Machine Diagram](diagrams/README.md#5-question-state-machine)). Any state can also end in `failed`, `cancelled` or `interrupted`.
 
-```mermaid
-stateDiagram-v2
-    [*] --> received
-    received --> writing: no ready files
-    received --> planning
-    planning --> broadcasting: ask for volunteers
-    planning --> assigning: call translators directly
-    broadcasting --> assigning
-    assigning --> working: translators assigned
-    assigning --> drafting: nobody to assign
-    working --> reviewing
-    reviewing --> working: continue, with follow-ups
-    reviewing --> drafting: enough
-    drafting --> verifying: claims
-    drafting --> writing: no claims
-    verifying --> writing: all supported
-    verifying --> reviewing: some failed, next round
-    verifying --> writing: rounds used up (partial)
-    writing --> answered
-    writing --> answered_partial
-    answered --> [*]
-    answered_partial --> [*]
-```
+A new workspace starts with one translator. With one, a question takes a fast path of four turns: every ready file goes to that translator (`work`), then `draft_claims`, `verify` and `write_answer`; the `plan`, `volunteer`, `assign` and `review` turns are skipped. After a failed verification the orchestrator still reviews the failed claims once before the translator reworks. Add a second translator and every question runs the full huddle below (8 to 10 turns). Quote checks and claim verification are the same in both.
 
-Any state can also end in `failed`, `cancelled` or `interrupted`.
-
-The same flow as an exchange:
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant API as Backend
-    participant O as Orchestrator
-    participant T as Translators
-    participant V as Verifier
-    participant C as Chat agent
-
-    User->>API: ask(question)
-    API->>O: plan: which files, which translators
-    O-->>API: broadcast or direct calls
-    API->>T: volunteer / assign
-    loop discussion, up to TWYF_MAX_DISCUSSION_STEPS
-        API->>API: search passages and notes for each translator
-        API->>T: work: read these passages
-        T-->>API: statements, each with quotes
-        API->>API: check every quote is in the file
-        API->>O: review the statements
-        O-->>API: continue (with follow-ups) or enough
-    end
-    API->>O: draft claims from the statements
-    O-->>API: claims, each citing passages
-    API->>V: verify each claim against its passages
-    V-->>API: verdicts
-    alt some claims fail and rounds remain
-        API->>O: review the failures, next round
-    else all supported, or rounds used up
-        API->>C: write the answer from the claims that passed
-        C-->>API: answer with citation numbers
-        API-->>User: answer, citations, verdicts
-    end
-```
+The flow of turns and agent interactions ([See Question Orchestration Sequence Diagram](diagrams/README.md#3-question-orchestration-sequence)).
 
 What is enforced, whatever model does the turns:
 
@@ -186,22 +66,7 @@ What is enforced, whatever model does the turns:
 
 ## Which parts run in each way of use
 
-```mermaid
-flowchart TB
-    subgraph W1["1. The app (./start.sh)"]
-        direction LR
-        U1["Chat UI"] --> B1["Backend"] --> R1["command runtime:<br/>claude -p per turn<br/>(subscription or API key)"]
-    end
-    subgraph W2["2. Backend alone (./start.sh --backend-only)"]
-        direction LR
-        S2["Scripts / /docs"] --> B2["Backend"] --> R2["command runtime"]
-    end
-    subgraph W3["3. A harness through MCP"]
-        direction LR
-        H3["Harness"] --> M3["MCP tools"] --> B3["Backend"]
-        B3 --> R3["command runtime,<br/>or queue: a harness<br/>session does the turns"]
-    end
-```
+The three ways to run agent turns ([See Runtime Execution Modes Diagram](diagrams/README.md#6-runtime-execution-modes)):
 
 | Scenario | Who thinks | Orchestration and verification |
 |---|---|---|
