@@ -109,6 +109,7 @@ from twyf.orchestration.machine import (
     RunDraftClaims,
     RunPlan,
     RunReview,
+    RunSoloAssign,
     RunVerify,
     RunVolunteers,
     RunWork,
@@ -314,7 +315,7 @@ class Engine:
         ready, missing = await self._db(check_files, write=False)
         for name in missing:
             await self._status(q, f"{name} is no longer available and was left out.")
-        return Start(ready)
+        return Start(ready, solo=len(q.translators) == 1)
 
     async def _execute(self, q: Q, state: QState, command: Command) -> QEvent | None:
         match command:
@@ -322,6 +323,8 @@ class Engine:
                 await self._db(lambda c: self._start_round(c, q, n, reason))
             case RunPlan():
                 return await self._plan(q)
+            case RunSoloAssign():
+                return await self._solo_assign(q)
             case EmitBroadcast(to=to):
                 plan = q.plan
                 assert plan is not None
@@ -419,6 +422,12 @@ class Engine:
         named_files, named_agents = inputs.named(conn, q.workspace_id, q.text)
         usable = {r["id"] for r in rows}
         return files, agents, [f for f in named_files if f in usable], named_agents
+
+    async def _solo_assign(self, q: Q) -> AssignDone:
+        """The fast path: with one translator there is nobody to choose between, so it gets every ready file."""
+        rows = await self._db(lambda c: inputs.usable_ready_files(c, q.workspace_id), write=False)
+        (solo,) = q.translators
+        return AssignDone((Assignment(solo, tuple(r["id"] for r in rows), "", "called"),))
 
     async def _plan(self, q: Q) -> PlanDone:
         files, agents, named_files, named_agents = await self._db(lambda c: self._context(c, q), write=False)

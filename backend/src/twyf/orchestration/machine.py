@@ -18,6 +18,7 @@ class QState:
     max_steps: int = 6
     members: frozenset[str] = frozenset()
     partial: bool = False
+    solo: bool = False  # one translator in the workspace: no plan, volunteer, assign or review of finished work
 
 
 # What the commands carry
@@ -59,6 +60,7 @@ class FailedClaim:
 @dataclass(frozen=True)
 class Start:
     ready_files: int
+    solo: bool = False
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,11 @@ class StartRound:
 @dataclass(frozen=True)
 class RunPlan:
     pass
+
+
+@dataclass(frozen=True)
+class RunSoloAssign:
+    """Give every ready file to the workspace's only translator, without asking the orchestrator."""
 
 
 @dataclass(frozen=True)
@@ -246,7 +253,7 @@ class EmitError:
 
 
 type Command = (
-    StartRound | RunPlan | EmitBroadcast | RunVolunteers | RunAssign | Join | Assign | RunWork | Say | RunReview
+    StartRound | RunPlan | RunSoloAssign | EmitBroadcast | RunVolunteers | RunAssign | Join | Assign | RunWork | Say | RunReview
     | RunDraftClaims | EmitVerify | RunVerify | EmitVerdict | EmitRehuddle | Leave | RunWriteAnswer | EmitContext
     | EmitAnswer | Complete | CancelTurns | EmitCancelled | EmitError
 )  # fmt: skip
@@ -289,6 +296,11 @@ def transition(state: QState, event: QEvent) -> tuple[QState, list[Command]]:
     match state.name, event:
         case "received", Start(ready_files=0):
             return replace(state, name="writing"), [RunWriteAnswer("no_files")]
+        case "received", Start(solo=True):
+            return replace(state, name="assigning", round_no=1, steps=0, solo=True), [
+                StartRound(1, "initial"),
+                RunSoloAssign(),
+            ]
         case "received", Start():
             return replace(state, name="planning", round_no=1, steps=0), [StartRound(1, "initial"), RunPlan()]
         case "planning", PlanDone(to=to, calls=calls) if to:
@@ -304,6 +316,8 @@ def transition(state: QState, event: QEvent) -> tuple[QState, list[Command]]:
             return next_state, [Join(joined), Assign(assignments), RunWork(assignments)]
         case "assigning", AssignDone():
             return replace(state, name="drafting"), [RunDraftClaims()]
+        case "working", WorkDone(left=left) if state.solo:
+            return replace(state, name="drafting", members=state.members - left), [RunDraftClaims()]
         case "working", WorkDone(left=left):
             return replace(state, name="reviewing", members=state.members - left), [RunReview(())]
         case "reviewing", ReviewDone(decision="continue", followups=followups) if (

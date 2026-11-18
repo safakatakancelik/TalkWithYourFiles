@@ -50,7 +50,7 @@ def test_agent_note_rules(ws: Workspace, ctx: RequestContext, conn: sqlite3.Conn
     agent_note(conn, ctx, ws.id, a.id, "Guidance only", [], agent, kind="interpretation")
     note_id = agent_note(conn, ctx, ws.id, a.id, "It ends in 2029 [1].", [in_a], agent)
     [listed] = [n for n in notes.list(ctx, ListNotesInput(ws=ws.id)) if n.id == note_id]
-    assert listed.author_id == agent and listed.author_name == "Translator 1"
+    assert listed.author_id == agent and listed.author_name == "Translator"
     assert [(c.n, c.id) for c in listed.citations] == [(1, in_a)]
 
 
